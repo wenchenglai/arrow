@@ -22,6 +22,29 @@
 This directory contains the code and build system for the Arrow C++ libraries,
 as well as for the C++ libraries for Apache Parquet.
 
+# Parquet Reader
+
+mkdir parquet_release
+
+cd parquet_release/
+
+cmake -DARROW_PARQUET=ON -DARROW_OPTIONAL_INSTALL=ON -DPARQUET_BUILD_EXAMPLES=ON -DARROW_WITH_SNAPPY=ON ..
+
+make install
+
+cd parquet_release/examples/parquet
+
+change code, and make all the time
+
+cd arrow/cpp/parquet_release/release
+
+run the app:
+
+./dhl-reader ../../../data
+
+
+Test data is located at arrow/data folder, there are multiple parquet files.
+
 ## Installation
 
 See https://arrow.apache.org/install/ for the latest instructions how
