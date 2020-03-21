@@ -17,10 +17,12 @@
 
 add_executable(parquet-low-level-example low-level-api/reader-writer.cc)
 add_executable(parquet-low-level-example2 low-level-api/reader-writer2.cc)
+add_executable(dhl-reader low-level-api/dhl-reader.cc)
 add_executable(parquet-arrow-example parquet-arrow/reader-writer.cc)
 add_executable(parquet-stream-api-example parquet-stream-api/stream-reader-writer.cc)
 target_include_directories(parquet-low-level-example PRIVATE low-level-api/)
 target_include_directories(parquet-low-level-example2 PRIVATE low-level-api/)
+target_include_directories(dhl-reader PRIVATE low-level-api/)
 
 if (PARQUET_REQUIRE_ENCRYPTION)
   add_executable(parquet-encryption-example low-level-api/encryption-reader-writer.cc)
@@ -39,6 +41,7 @@ endif()
 target_link_libraries(parquet-arrow-example ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(parquet-low-level-example ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(parquet-low-level-example2 ${PARQUET_EXAMPLE_LINK_LIBS})
+target_link_libraries(dhl-reader ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(parquet-stream-api-example ${PARQUET_EXAMPLE_LINK_LIBS})
 
 if(PARQUET_REQUIRE_ENCRYPTION)
