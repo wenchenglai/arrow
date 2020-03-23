@@ -126,6 +126,22 @@ std::shared_ptr<arrow::Table> read_whole_file(std::string file_path) {
     return table;
 }
 
+void read_whole_file_thread(std::string file_path) {
+    std::shared_ptr<arrow::io::ReadableFile> infile;
+    PARQUET_ASSIGN_OR_THROW(
+            infile,
+            arrow::io::ReadableFile::Open(file_path,
+                                          arrow::default_memory_pool()));
+
+    std::unique_ptr<parquet::arrow::FileReader> reader;
+    PARQUET_THROW_NOT_OK(
+            parquet::arrow::OpenFile(infile, arrow::default_memory_pool(), &reader));
+    std::shared_ptr<arrow::Table> table;
+    PARQUET_THROW_NOT_OK(reader->ReadTable(&table));
+
+    std::cout << "Loaded " << table->num_rows() << " total rows in " << table->num_columns() << " columns." << std::endl;
+}
+
 int load_data_from_folder(std::string input_folder_path) {
     DIR *dir;
     struct dirent *ent;
@@ -133,6 +149,8 @@ int load_data_from_folder(std::string input_folder_path) {
         //std::vector<std::shared_ptr<arrow::Table>> tables;
         int row_count = 0;
         int column_count = 0;
+
+        std::vector<std::thread> threads;
         /* print all the files and directories within directory */
         while ((ent = readdir (dir)) != NULL) {
             std::string file_name = ent->d_name;
@@ -144,21 +162,23 @@ int load_data_from_folder(std::string input_folder_path) {
                 // make sure file name ends with .parquet
                 if (file_name.substr(length - 8, length - 1) == ".parquet") {
                     std::cout << file_name << std::endl;
-                    std::shared_ptr<arrow::Table> new_table = read_whole_file(input_folder_path + "/" + file_name);
-                    row_count += new_table->num_rows();
-                    column_count = new_table->num_columns();
-                    //delete new_table;
+
+                    threads.push_back(std::thread(read_whole_file_thread, input_folder_path + "/" + file_name));
+                    //std::shared_ptr<arrow::Table> new_table = read_whole_file(input_folder_path + "/" + file_name);
+                    //row_count += new_table->num_rows();
+                    //column_count = new_table->num_columns();
+
                     //tables.push_back(new_table);
                 }
             }
         }
         closedir (dir);
 
-
+        for (auto& th : threads) th.join();
         //arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
         //std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
         //std::cout << "Loaded " << result_table->num_rows() << " rows in " << result_table->num_columns() << " columns." << std::endl;
-        std::cout << "Loaded " << row_count << " total rows in " << column_count << " columns." << std::endl;
+        //std::cout << "Loaded " << row_count << " total rows in " << column_count << " columns." << std::endl;
 
         //delete result;
 
