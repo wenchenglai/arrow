@@ -21,12 +21,14 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <thread>
 
 #include <reader_writer.h>
 #include <arrow/api.h>
 //#include <arrow/io/api.h>
 #include <parquet/arrow/reader.h>
 //#include <parquet/arrow/writer.h>
+
 /*
  * This example describes writing and reading Parquet Files in C++ and serves as a
  * reference to the API.
@@ -49,6 +51,7 @@
 
 constexpr int NUM_ROWS_PER_ROW_GROUP = 500;
 const char PARQUET_FILENAME[] = "dhl.parquet";
+const std::string PARQUET = ".parquet";
 
 class DhlRecord {
 public:
@@ -127,21 +130,37 @@ int load_data_from_folder(std::string input_folder_path) {
     DIR *dir;
     struct dirent *ent;
     if ((dir = opendir (input_folder_path.c_str())) != NULL) {
-        std::vector<std::shared_ptr<arrow::Table>> tables;
+        //std::vector<std::shared_ptr<arrow::Table>> tables;
+        int row_count = 0;
+        int column_count = 0;
         /* print all the files and directories within directory */
         while ((ent = readdir (dir)) != NULL) {
             std::string file_name = ent->d_name;
-            if (file_name.find("parquet") != std::string::npos) {
-                printf("%s\n", ent->d_name);
-                std::shared_ptr<arrow::Table> new_table = read_whole_file(input_folder_path + "/" + file_name);
-                tables.push_back(new_table);
+
+            // get rid of . folder and other non-parquet files
+            if (file_name.find(PARQUET) != std::string::npos) {
+                int length = file_name.length();
+
+                // make sure file name ends with .parquet
+                if (file_name.substr(length - 8, length - 1) == ".parquet") {
+                    std::cout << file_name << std::endl;
+                    std::shared_ptr<arrow::Table> new_table = read_whole_file(input_folder_path + "/" + file_name);
+                    row_count += new_table->num_rows();
+                    column_count = new_table->num_columns();
+                    //delete new_table;
+                    //tables.push_back(new_table);
+                }
             }
         }
         closedir (dir);
 
-        arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
-        std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
-        std::cout << "Loaded " << result_table->num_rows() << " rows in " << result_table->num_columns() << " columns." << std::endl;
+
+        //arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
+        //std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
+        //std::cout << "Loaded " << result_table->num_rows() << " rows in " << result_table->num_columns() << " columns." << std::endl;
+        std::cout << "Loaded " << row_count << " total rows in " << column_count << " columns." << std::endl;
+
+        //delete result;
 
     } else {
         /* could not open directory */
@@ -417,7 +436,7 @@ int main(int argc, char** argv) {
     if (argc > 1) {
         input_folder_path = argv[1];
     }
-    std::cout << "argc = " << argc << ", argv = " << input_folder_path << std::endl;
+    //std::cout << "argc = " << argc << ", argv = " << input_folder_path << std::endl;
 
     try {
         auto start = std::chrono::steady_clock::now();
@@ -425,7 +444,7 @@ int main(int argc, char** argv) {
         load_data_from_folder(input_folder_path);
 
         auto end = std::chrono::steady_clock::now();
-        std::chrono::duration<double> elapsed_seconds = end-start;
+        std::chrono::duration<double> elapsed_seconds = end - start;
         std::cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
 
     } catch (const std::exception& e) {
