@@ -23,7 +23,7 @@
 #include <memory>
 #include <thread>
 
-#include <reader_writer.h>
+#include "reader_writer.h"
 #include <arrow/api.h>
 //#include <arrow/io/api.h>
 #include <parquet/arrow/reader.h>
