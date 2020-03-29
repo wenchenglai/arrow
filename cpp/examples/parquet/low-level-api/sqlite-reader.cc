@@ -30,6 +30,16 @@
 #include <parquet/arrow/reader.h>
 //#include <parquet/arrow/writer.h>
 
+using arrow::Int64Builder;
+
+#define EXIT_ON_FAILURE(expr)                      \
+  do {                                             \
+    arrow::Status status_ = (expr);                \
+    if (!status_.ok()) {                           \
+      std::cerr << status_.message() << std::endl; \
+      return EXIT_FAILURE;                         \
+    }                                              \
+  } while (0);
 /*
  * This example describes writing and reading Parquet Files in C++ and serves as a
  * reference to the API.
@@ -521,8 +531,56 @@ int get_all_files_path(std::string dhl_name, std::vector<std::vector<std::string
     return 1;
 }
 
-void load_data_to_arrow(std::string file_path) {
-    std::cout << "reading file: " << file_path << std::endl;
+arrow::Status VectorToColumnarTable(const std::vector<DhlRecord>& rows,
+                                    std::shared_ptr<arrow::Table>* table) {
+    // The builders are more efficient using
+    // arrow::jemalloc::MemoryPool::default_pool() as this can increase the size of
+    // the underlying memory regions in-place. At the moment, arrow::jemalloc is only
+    // supported on Unix systems, not Windows.
+    arrow::MemoryPool* pool = arrow::default_memory_pool();
+
+    Int64Builder x_builder(pool);
+    Int64Builder y_builder(pool);
+    Int64Builder id_builder(pool);
+
+    // Now we can loop over our existing data and insert it into the builders. The
+    // `Append` calls here may fail (e.g. we cannot allocate enough additional memory).
+    // Thus we need to check their return values. For more information on these values,
+    // check the documentation about `arrow::Status`.
+    for (const DhlRecord& row : rows) {
+        ARROW_RETURN_NOT_OK(x_builder.Append(row.defectKey$swathX));
+        ARROW_RETURN_NOT_OK(y_builder.Append(row.defectKey$swathY));
+        ARROW_RETURN_NOT_OK(id_builder.Append(row.defectKey$defectID));
+    }
+
+    // At the end, we finalise the arrays, declare the (type) schema and combine them
+    // into a single `arrow::Table`:
+    std::shared_ptr<arrow::Array> x_array;
+    ARROW_RETURN_NOT_OK(x_builder.Finish(&x_array));
+
+    std::shared_ptr<arrow::Array> y_array;
+    ARROW_RETURN_NOT_OK(y_builder.Finish(&y_array));
+
+    std::shared_ptr<arrow::Array> id_array;
+    ARROW_RETURN_NOT_OK(id_builder.Finish(&id_array));
+
+
+    std::vector<std::shared_ptr<arrow::Field>> schema_vector = {
+            arrow::field("defectKey$swathX", arrow::int64()), arrow::field("defectKey$swathY", arrow::int64()),
+            arrow::field("defectKey$defectID", arrow::int64())};
+
+    auto schema = std::make_shared<arrow::Schema>(schema_vector);
+
+    // The final `table` variable is the one we then can pass on to other functions
+    // that can consume Apache Arrow memory structures. This object has ownership of
+    // all referenced data, thus we don't have to care about undefined references once
+    // we leave the scope of the function building the table and its underlying arrays.
+    *table = arrow::Table::Make(schema, {x_array, y_array, id_array});
+
+    return arrow::Status::OK();
+}
+
+int load_data_to_arrow(std::string file_path) {
     sqlite3* pDb;
     int flags = (SQLITE_OPEN_READONLY);
 
@@ -539,7 +597,7 @@ void load_data_to_arrow(std::string file_path) {
         } else {
             std::cerr << "Unable to get DB handle" << std::endl;
         }
-        return;
+        return 0;
     }
 
     //std::string strKey = "sAr5w3Vk5l";
@@ -559,7 +617,7 @@ void load_data_to_arrow(std::string file_path) {
             std::cerr << "Unable to key the database" << std::endl;
         }
 
-        return;
+        return 0;
     }
 
     std::string query = "SELECT * FROM attribTable;";
@@ -581,7 +639,7 @@ void load_data_to_arrow(std::string file_path) {
             std::cerr << "Unable to prepare SQLite statement" << std::endl;
         }
 
-        return;
+        return 0;
     }
 
     std::vector<DhlRecord> records;
@@ -606,12 +664,22 @@ void load_data_to_arrow(std::string file_path) {
     sqlite3_finalize(stmt);
     sqlite3_close(pDb);
 
-    for (DhlRecord record : records) {
-        std::cout << "Record obj: x = " << record.defectKey$swathX << ".  y = " << record.defectKey$swathY << ". id = " << record.defectKey$defectID << std::endl;
-    }
+//    for (DhlRecord record : records) {
+//        std::cout << "Record obj: x = " << record.defectKey$swathX << ".  y = " << record.defectKey$swathY << ". id = " << record.defectKey$defectID << std::endl;
+//    }
     // Now we have a list of records, next we populate an arrow table
-    //std::shared_ptr<arrow::Table> table;
-    //EXIT_ON_FAILURE(VectorToColumnarTable(rows, &table));
+    std::shared_ptr<arrow::Table> table;
+    EXIT_ON_FAILURE(VectorToColumnarTable(records, &table));
+    //VectorToColumnarTable(records, &table);
+
+    //std::cout << "Arrows Loaded " << table->num_rows() << " total rows in " << table->num_columns() << " columns." << std::endl;
+    return 0;
+}
+
+void process_each_node(std::vector<std::string> const &file_paths) {
+    for (auto file_path : file_paths) {
+        load_data_to_arrow(file_path);
+    }
 }
 
 int main(int argc, char** argv) {
@@ -619,7 +687,6 @@ int main(int argc, char** argv) {
     if (argc > 1) {
         dhl_name = argv[1];
     }
-    std::cout << "DHL Name = " << dhl_name << std::endl;
 
     auto start = std::chrono::steady_clock::now();
 
@@ -630,25 +697,19 @@ int main(int argc, char** argv) {
     int node_size = file_paths_all_nodes.size();
     std::cout << "Node Count  = " << node_size << std::endl;
 
-//    for (auto file_paths: file_paths_all_nodes) {
-//        std::cout << "Node List size = " << file_paths.size() << std::endl;
-//        std::cout << "first element = " << file_paths.front() << std::endl;
-//        std::cout << "last element = " << file_paths.back() << std::endl;
-//    }
+    for (auto file_paths: file_paths_all_nodes) {
+        std::cout << "Node List size = " << file_paths.size() << std::endl;
+        //std::cout << "first element = " << file_paths.front() << std::endl;
+        //std::cout << "last element = " << file_paths.back() << std::endl;
+    }
 
-    int files_count = 1;
+    std::vector<std::thread> threads;
 
     for (auto file_paths : file_paths_all_nodes) {
-        for (auto file_path : file_paths) {
-            if (files_count <= 2) {
-                load_data_to_arrow(file_path);
-                files_count++;
-            } else {
-                break;
-            }
-        }
-        files_count = 1;
+        threads.push_back(std::thread(process_each_node, file_paths));
     }
+
+    for (auto& th : threads) th.join();
 
     auto end = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
