@@ -462,6 +462,7 @@ int main(int argc, char** argv) {
     }
     std::cout << "DHL Name = " << dhl_name << std::endl;
 
+    auto start = std::chrono::steady_clock::now();
 //    // loop through each node
 //    const fs::path pathToShow{ argc >= 2 ? argv[1] : fs::current_path() };
 //
@@ -529,7 +530,8 @@ int main(int argc, char** argv) {
                                                 if (swath_dir_item->d_type == DT_REG) {
                                                     std::string file_name = swath_dir_item->d_name;
 
-                                                    if (file_name.find(CH0PATCH) || file_name.find(CH1PATCH)) {
+                                                    if (file_name.find(CH0PATCH) != std::string::npos
+                                                    || file_name.find(CH1PATCH) != std::string::npos) {
                                                         file_paths.push_back(abs_die_row_path + abs_swath_path + "/" + file_name);
                                                     }
                                                 }
@@ -577,6 +579,10 @@ int main(int argc, char** argv) {
 //    }
 //
 //    std::cout << "Parquet Reading Completed!" << std::endl;
+
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end - start;
+    std::cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
 
     return 0;
 }
