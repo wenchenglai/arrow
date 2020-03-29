@@ -18,7 +18,7 @@
 add_executable(parquet-low-level-example low-level-api/reader-writer.cc)
 add_executable(parquet-low-level-example2 low-level-api/reader-writer2.cc)
 add_executable(dhl-reader low-level-api/dhl-reader.cc)
-add_executable(sqlite-reader low-level-api/sqlite-reader.cc)
+add_executable(sqlite-reader low-level-api/sqlite-reader.cc low-level-api/sqlite3.c)
 add_executable(parquet-arrow-example parquet-arrow/reader-writer.cc)
 add_executable(parquet-stream-api-example parquet-stream-api/stream-reader-writer.cc)
 target_include_directories(parquet-low-level-example PRIVATE low-level-api/)

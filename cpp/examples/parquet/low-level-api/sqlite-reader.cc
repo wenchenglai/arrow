@@ -24,6 +24,7 @@
 #include <thread>
 
 #include "reader_writer.h"
+#include "sqlite3.h"
 #include <arrow/api.h>
 //#include <arrow/io/api.h>
 #include <parquet/arrow/reader.h>
@@ -51,9 +52,6 @@
 
 //namespace fs = std::__fs::filesystem;
 
-
-
-constexpr int NUM_ROWS_PER_ROW_GROUP = 500;
 const char PARQUET_FILENAME[] = "dhl.parquet";
 const std::string PARQUET = ".parquet";
 
@@ -64,19 +62,10 @@ public:
         this->defectKey$swathY = defectKey$swathY;
         this->defectKey$defectID = defectKey$defectID;
     }
-private:
+
     int64_t defectKey$swathX;
     int64_t defectKey$swathY;
     int64_t defectKey$defectID;
-};
-
-class Dhl {
-public:
-    void push(DhlRecord record) {
-        records.push_back(record);
-    }
-private:
-    std::vector<DhlRecord> records;
 };
 
 void print_data(int64_t rows_read, int16_t definition_level, int16_t repetition_level, int64_t value, int64_t values_read, int i) {
@@ -151,8 +140,6 @@ int load_data_from_folder(std::string input_folder_path) {
     struct dirent *ent;
     if ((dir = opendir (input_folder_path.c_str())) != NULL) {
         //std::vector<std::shared_ptr<arrow::Table>> tables;
-        int row_count = 0;
-        int column_count = 0;
 
         std::vector<std::thread> threads;
         /* print all the files and directories within directory */
@@ -191,6 +178,7 @@ int load_data_from_folder(std::string input_folder_path) {
         perror ("");
         return EXIT_FAILURE;
     }
+    return 0;
 }
 
 void load_data_single_file() {
@@ -455,45 +443,19 @@ void load_data_single_file() {
     }
 }
 
-int main(int argc, char** argv) {
-    std::string dhl_name = "";
-    if (argc > 1) {
-        dhl_name = argv[1];
-    }
-    std::cout << "DHL Name = " << dhl_name << std::endl;
-
-    auto start = std::chrono::steady_clock::now();
-//    // loop through each node
-//    const fs::path pathToShow{ argc >= 2 ? argv[1] : fs::current_path() };
-//
-//    std::vector<std::string> file_paths;
-//    for(auto itEntry = fs::recursive_directory_iterator(pathToShow);
-//        itEntry != fs::recursive_directory_iterator();
-//        ++itEntry ) {
-//        if (itEntry.depth() == DHL_FILE_DEPTH) {
-//            const auto file_name = itEntry->path().filename().string();
-//            if (file_name == CH0PATCH || file_name == CH1PATCH || file_name == "DependInfo.cmake") {
-//                //std::cout << itEntry->path() << std::endl;
-//                file_paths.push_back(file_name);
-//            }
-//        }
-//        //std::cout << std::setw(itEntry.depth()*3) << "";
-//        //std::cout << "depth: " << itEntry.depth() <<  ", name: " << filenameStr << '\n';
-//    }
-
+int get_all_files_path(std::string dhl_name, std::vector<std::vector<std::string>> &file_paths_all_nodes) {
+    // CONSTANTS declaration, could move else where for more flexibility
     int NODES_COUNT = 6;
-
     std::string DHL_ROOT_PATH = "/mnt/nodes/";
-    //DHL_ROOT_PATH = "/Users/wen/github/arrow/data/test_dirs/";
+    DHL_ROOT_PATH = "/Users/wen/github/arrow/data/test_dirs/";
     std::string DIE_ROW = "dierow_";
     std::string SWATH = "swath_";
-    const int DHL_FILE_DEPTH = 2;
     std::string CH0PATCH = "channel0.patch";
     std::string CH1PATCH = "channel1.patch";
 
-    std::vector<std::string> file_paths;
-
     for (int i = 0; i < NODES_COUNT; i++) {
+        std::vector<std::string> file_paths;
+
         std::string worker_node_path = "R" + std::to_string(i) + "C0S/";
         std::string dhl_path = DHL_ROOT_PATH + worker_node_path + dhl_name;
 
@@ -531,8 +493,8 @@ int main(int argc, char** argv) {
                                                     std::string file_name = swath_dir_item->d_name;
 
                                                     if (file_name.find(CH0PATCH) != std::string::npos
-                                                    || file_name.find(CH1PATCH) != std::string::npos) {
-                                                        file_paths.push_back(abs_die_row_path + abs_swath_path + "/" + file_name);
+                                                        || file_name.find(CH1PATCH) != std::string::npos) {
+                                                        file_paths.push_back(abs_swath_path + "/" + file_name);
                                                     }
                                                 }
                                             }
@@ -553,17 +515,146 @@ int main(int argc, char** argv) {
             perror ("");
             return EXIT_FAILURE;
         }
+        file_paths_all_nodes.push_back(file_paths);
     }
 
-    std::cout << "found files size = " << file_paths.size() << std::endl;
-    std::cout << "first element = " << file_paths.front() << std::endl;
-    std::cout << "last element = " << file_paths.back() << std::endl;
-    // Step 2: Iterate through each file and open connection
-    for (auto file_path: file_paths) {
-        //std::cout << file_path << std::endl;
+    return 1;
+}
+
+void load_data_to_arrow(std::string file_path) {
+    std::cout << "reading file: " << file_path << std::endl;
+    sqlite3* pDb;
+    int flags = (SQLITE_OPEN_READONLY);
+
+    int bResult = sqlite3_open_v2(file_path.c_str(), &pDb, flags, NULL);
+
+    if (SQLITE_OK != bResult) {
+        sqlite3_close(pDb);
+        std::cerr << "Cannot Open DB: " << bResult << std::endl;
+
+        if (nullptr != pDb) {
+            std::string strMsg = sqlite3_errmsg(pDb);
+            sqlite3_close_v2(pDb);
+            pDb = nullptr;
+        } else {
+            std::cerr << "Unable to get DB handle" << std::endl;
+        }
+        return;
     }
 
+    //std::string strKey = "sAr5w3Vk5l";
+    std::string strKey = "e9FkChw3xF";
+    bResult = sqlite3_key_v2(pDb, nullptr, strKey.c_str(), static_cast<int>(strKey.size()));
 
+    if (SQLITE_OK != bResult) {
+        sqlite3_close(pDb);
+        std::cerr << "Cannot key the DB: " << bResult << std::endl;
+
+        if (nullptr != pDb) {
+            std::string strMsg = sqlite3_errmsg(pDb);
+            sqlite3_close_v2(pDb);
+            pDb = nullptr;
+            std::cerr << "SQLite Error Message: " << strMsg << std::endl;
+        } else {
+            std::cerr << "Unable to key the database" << std::endl;
+        }
+
+        return;
+    }
+
+    std::string query = "SELECT * FROM attribTable;";
+
+    sqlite3_stmt *stmt;
+    bResult = sqlite3_prepare_v2(pDb, query.c_str(), -1, &stmt, NULL);
+
+    if (SQLITE_OK != bResult) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(pDb);
+        std::cerr << "Cannot prepare statement from DB: " << bResult << std::endl;
+
+        if (nullptr != pDb) {
+            std::string strMsg = sqlite3_errmsg(pDb);
+            sqlite3_close_v2(pDb);
+            pDb = nullptr;
+            std::cerr << "SQLite Error Message: " << strMsg << std::endl;
+        } else {
+            std::cerr << "Unable to prepare SQLite statement" << std::endl;
+        }
+
+        return;
+    }
+
+    std::vector<DhlRecord> records;
+
+    while ((bResult = sqlite3_step(stmt)) == SQLITE_ROW) {
+        int col_index = 0;
+        int x = sqlite3_column_int64(stmt, col_index++);
+        int y = sqlite3_column_int64(stmt, col_index++);
+        int id = sqlite3_column_int64(stmt, col_index++);
+
+        records.emplace_back(x, y, id);
+        //const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, col_index++));
+        //const char* number = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        //long value = static_cast<long>(sqlite3_column_int64(stmt, col_index++));
+        //std::cout << "id = " << id << ", x = " << x << std::endl;
+    }
+    if (bResult != SQLITE_DONE) {
+        std::cerr << "SELECT failed: " << sqlite3_errmsg(pDb) << std::endl;
+        // if you return/throw here, don't forget the finalize
+    }
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(pDb);
+
+    for (DhlRecord record : records) {
+        std::cout << "Record obj: x = " << record.defectKey$swathX << ".  y = " << record.defectKey$swathY << ". id = " << record.defectKey$defectID << std::endl;
+    }
+    // Now we have a list of records, next we populate an arrow table
+    //std::shared_ptr<arrow::Table> table;
+    //EXIT_ON_FAILURE(VectorToColumnarTable(rows, &table));
+}
+
+int main(int argc, char** argv) {
+    std::string dhl_name = "";
+    if (argc > 1) {
+        dhl_name = argv[1];
+    }
+    std::cout << "DHL Name = " << dhl_name << std::endl;
+
+    auto start = std::chrono::steady_clock::now();
+
+    // we will create one vector per node
+    std::vector<std::vector<std::string>> file_paths_all_nodes;
+    get_all_files_path(dhl_name, file_paths_all_nodes);
+
+    int node_size = file_paths_all_nodes.size();
+    std::cout << "Node Count  = " << node_size << std::endl;
+
+//    for (auto file_paths: file_paths_all_nodes) {
+//        std::cout << "Node List size = " << file_paths.size() << std::endl;
+//        std::cout << "first element = " << file_paths.front() << std::endl;
+//        std::cout << "last element = " << file_paths.back() << std::endl;
+//    }
+
+    int files_count = 1;
+
+    for (auto file_paths : file_paths_all_nodes) {
+        for (auto file_path : file_paths) {
+            if (files_count <= 2) {
+                load_data_to_arrow(file_path);
+                files_count++;
+            } else {
+                break;
+            }
+        }
+        files_count = 1;
+    }
+
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end - start;
+    std::cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
+
+    return 0;
 //    try {
 //        auto start = std::chrono::steady_clock::now();
 //
@@ -574,16 +665,10 @@ int main(int argc, char** argv) {
 //        std::cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
 //
 //    } catch (const std::exception& e) {
-//        std::cerr << "Parquet read error: " << e.what() << std::endl;
+//        std::std::cerr << "Parquet read error: " << e.what() << std::endl;
 //        return -1;
 //    }
 //
 //    std::cout << "Parquet Reading Completed!" << std::endl;
-
-    auto end = std::chrono::steady_clock::now();
-    std::chrono::duration<double> elapsed_seconds = end - start;
-    std::cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
-
-    return 0;
 }
 

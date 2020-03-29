@@ -60,7 +60,7 @@ public:
         this->defectKey$swathY = defectKey$swathY;
         this->defectKey$defectID = defectKey$defectID;
     }
-private:
+
     int64_t defectKey$swathX;
     int64_t defectKey$swathY;
     int64_t defectKey$defectID;
