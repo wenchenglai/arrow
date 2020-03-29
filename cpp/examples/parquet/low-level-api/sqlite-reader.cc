@@ -49,16 +49,9 @@
  * https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
  **/
 
-namespace fs = std::__fs::filesystem;
+//namespace fs = std::__fs::filesystem;
 
-int NODES_COUNT = 6;
 
-std::string DHL_ROOT_PATH = "/mnt/nodes/";
-std::string DIE_ROW = "dierow_";
-std::string SWATH = "swath_";
-const int DHL_FILE_DEPTH = 2;
-std::string CH0PATCH = "channel0.patch";
-std::string CH1PATCH = "channel1.patch";
 
 constexpr int NUM_ROWS_PER_ROW_GROUP = 500;
 const char PARQUET_FILENAME[] = "dhl.parquet";
@@ -469,25 +462,105 @@ int main(int argc, char** argv) {
     }
     std::cout << "DHL Name = " << dhl_name << std::endl;
 
-    // loop through each node
-    const fs::path pathToShow{ argc >= 2 ? argv[1] : fs::current_path() };
+//    // loop through each node
+//    const fs::path pathToShow{ argc >= 2 ? argv[1] : fs::current_path() };
+//
+//    std::vector<std::string> file_paths;
+//    for(auto itEntry = fs::recursive_directory_iterator(pathToShow);
+//        itEntry != fs::recursive_directory_iterator();
+//        ++itEntry ) {
+//        if (itEntry.depth() == DHL_FILE_DEPTH) {
+//            const auto file_name = itEntry->path().filename().string();
+//            if (file_name == CH0PATCH || file_name == CH1PATCH || file_name == "DependInfo.cmake") {
+//                //std::cout << itEntry->path() << std::endl;
+//                file_paths.push_back(file_name);
+//            }
+//        }
+//        //std::cout << std::setw(itEntry.depth()*3) << "";
+//        //std::cout << "depth: " << itEntry.depth() <<  ", name: " << filenameStr << '\n';
+//    }
+
+    int NODES_COUNT = 6;
+
+    std::string DHL_ROOT_PATH = "/mnt/nodes/";
+    //DHL_ROOT_PATH = "/Users/wen/github/arrow/data/test_dirs/";
+    std::string DIE_ROW = "dierow_";
+    std::string SWATH = "swath_";
+    const int DHL_FILE_DEPTH = 2;
+    std::string CH0PATCH = "channel0.patch";
+    std::string CH1PATCH = "channel1.patch";
 
     std::vector<std::string> file_paths;
-    for(auto itEntry = fs::recursive_directory_iterator(pathToShow);
-        itEntry != fs::recursive_directory_iterator();
-        ++itEntry ) {
-        if (itEntry.depth() == DHL_FILE_DEPTH) {
-            const auto file_name = itEntry->path().filename().string();
-            if (file_name == CH0PATCH || file_name == CH1PATCH || file_name == "DependInfo.cmake") {
-                //std::cout << itEntry->path() << std::endl;
-                file_paths.push_back(file_name);
+
+    for (int i = 0; i < NODES_COUNT; i++) {
+        std::string worker_node_path = "R" + std::to_string(i) + "C0S/";
+        std::string dhl_path = DHL_ROOT_PATH + worker_node_path + dhl_name;
+
+        std::cout << "Top Level Path = " << dhl_path << std::endl;
+
+        DIR *dhl_dir = nullptr;
+        if ((dhl_dir = opendir(dhl_path.c_str())) != NULL) {
+            struct dirent *dhl_dir_item;
+
+            while ((dhl_dir_item = readdir(dhl_dir)) != NULL) {
+                if (dhl_dir_item->d_type == DT_DIR) {
+                    std::string die_row_folder_name = dhl_dir_item->d_name;
+
+                    //std::cout << "die_row_folder_name = " << die_row_folder_name << std::endl;
+
+                    if (die_row_folder_name.find(DIE_ROW) != std::string::npos) {
+                        //std::cout << "die_row_folder_name2 = " << die_row_folder_name << std::endl;
+                        DIR *die_row_dir = nullptr;
+                        std::string abs_die_row_path = dhl_path + "/" + die_row_folder_name;
+                        if ((die_row_dir = opendir(abs_die_row_path.c_str())) != NULL) {
+                            struct dirent *die_row_dir_item;
+                            while ((die_row_dir_item = readdir(die_row_dir)) != NULL) {
+                                if (die_row_dir_item->d_type == DT_DIR) {
+                                    std::string swath_folder_name = die_row_dir_item->d_name;
+
+                                    //std::cout << "swath_folder_name = " << swath_folder_name << std::endl;
+
+                                    if (swath_folder_name.find(SWATH) != std::string::npos) {
+                                        DIR *swath_dir = nullptr;
+                                        std::string abs_swath_path = abs_die_row_path + "/" + swath_folder_name;
+                                        if ((swath_dir = opendir(abs_swath_path.c_str())) != NULL) {
+                                            struct dirent *swath_dir_item;
+                                            while ((swath_dir_item = readdir(swath_dir)) != NULL) {
+                                                if (swath_dir_item->d_type == DT_REG) {
+                                                    std::string file_name = swath_dir_item->d_name;
+
+                                                    if (file_name.find(CH0PATCH) || file_name.find(CH1PATCH)) {
+                                                        file_paths.push_back(abs_die_row_path + abs_swath_path + "/" + file_name);
+                                                    }
+                                                }
+                                            }
+                                            closedir(swath_dir);
+                                        }
+                                    }
+                                }
+                            }
+                            closedir(die_row_dir);
+                        }
+
+                    }
+                }
             }
+            closedir(dhl_dir);
+        } else {
+            /* could not open directory */
+            perror ("");
+            return EXIT_FAILURE;
         }
-        //std::cout << std::setw(itEntry.depth()*3) << "";
-        //std::cout << "depth: " << itEntry.depth() <<  ", name: " << filenameStr << '\n';
     }
 
     std::cout << "found files size = " << file_paths.size() << std::endl;
+    std::cout << "first element = " << file_paths.front() << std::endl;
+    std::cout << "last element = " << file_paths.back() << std::endl;
+    // Step 2: Iterate through each file and open connection
+    for (auto file_path: file_paths) {
+        //std::cout << file_path << std::endl;
+    }
+
 
 //    try {
 //        auto start = std::chrono::steady_clock::now();

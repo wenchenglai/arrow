@@ -28,7 +28,7 @@ mkdir parquet_release
 
 cd parquet_release/
 
-cmake -DARROW_PARQUET=ON -DARROW_OPTIONAL_INSTALL=ON -DPARQUET_BUILD_EXAMPLES=ON -DARROW_WITH_SNAPPY=ON ..
+cmake -DARROW_PARQUET=ON -DARROW_OPTIONAL_INSTALL=ON -DPARQUET_BUILD_EXAMPLES=ON -DARROW_BUILD_EXAMPLES=ON -DARROW_WITH_SNAPPY=ON ..
 
 make install
 
@@ -44,6 +44,16 @@ run the app:
 
 
 Test data is located at arrow/data folder, there are multiple parquet files.
+
+## Test on ViX
+
+Set proper library path
+
+`export LD_LIBRARY_PATH=.`
+
+Observe search path:
+
+`LD_DEBUG`
 
 ## Installation
 
