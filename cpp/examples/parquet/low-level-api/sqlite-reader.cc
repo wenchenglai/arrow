@@ -457,7 +457,7 @@ int get_all_files_path(std::string dhl_name, std::vector<std::vector<std::string
     // CONSTANTS declaration, could move else where for more flexibility
     int NODES_COUNT = 6;
     std::string DHL_ROOT_PATH = "/mnt/nodes/";
-    DHL_ROOT_PATH = "/Users/wen/github/arrow/data/test_dirs/";
+    //DHL_ROOT_PATH = "/Users/wen/github/arrow/data/test_dirs/";
     std::string DIE_ROW = "dierow_";
     std::string SWATH = "swath_";
     std::string CH0PATCH = "channel0.patch";
@@ -690,26 +690,29 @@ int main(int argc, char** argv) {
 
     auto start = std::chrono::steady_clock::now();
 
-    // we will create one vector per node
+    // we will create one vector of patch files per node
     std::vector<std::vector<std::string>> file_paths_all_nodes;
     get_all_files_path(dhl_name, file_paths_all_nodes);
 
-    int node_size = file_paths_all_nodes.size();
-    std::cout << "Node Count  = " << node_size << std::endl;
-
     for (auto file_paths: file_paths_all_nodes) {
-        std::cout << "Node List size = " << file_paths.size() << std::endl;
+        std::cout << "Files count per node = " << file_paths.size() << std::endl;
         //std::cout << "first element = " << file_paths.front() << std::endl;
         //std::cout << "last element = " << file_paths.back() << std::endl;
     }
 
+    // thread list to join later
     std::vector<std::thread> threads;
 
     for (auto file_paths : file_paths_all_nodes) {
+        std::cout << "Creating a new thread to process files per node...." << std::endl;
         threads.push_back(std::thread(process_each_node, file_paths));
     }
 
-    for (auto& th : threads) th.join();
+    std::cout << "All threads have been started...." << std::endl;
+    for (auto& th : threads) {
+        th.join();
+    }
+    std::cout << "All threads finished their work." << std::endl;
 
     auto end = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
