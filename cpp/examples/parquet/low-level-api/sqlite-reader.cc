@@ -26,6 +26,8 @@
 #include "reader_writer.h"
 #include "sqlite3.h"
 #include <arrow/api.h>
+#include "arrow/util/decimal.h"
+#include "arrow/testing/util.h"
 //#include <arrow/io/api.h>
 #include <parquet/arrow/reader.h>
 //#include <parquet/arrow/writer.h>
@@ -191,273 +193,11 @@ int load_data_from_folder(std::string input_folder_path) {
     return 0;
 }
 
-void load_data_single_file() {
-    std::unique_ptr<parquet::ParquetFileReader> parquet_reader =
-            parquet::ParquetFileReader::OpenFile(PARQUET_FILENAME, false);
-
-    std::shared_ptr<parquet::FileMetaData> file_metadata = parquet_reader->metadata();
-
-    int num_row_groups = file_metadata->num_row_groups();
-
-    //print_metadata(file_metadata);
-
-    const int OUTPUT_SIZE = 1;
-    num_row_groups = 0;
-
-    for (int r = 0; r < num_row_groups; ++r) {
-        // Get the RowGroup Reader
-        std::shared_ptr <parquet::RowGroupReader> row_group_reader =
-                parquet_reader->RowGroup(r);
-
-        int64_t values_read = 0;
-        int64_t rows_read = 0;
-        int16_t definition_level;
-        int16_t repetition_level;
-        int i;
-        int column_index = 0;
-        std::shared_ptr <parquet::ColumnReader> column_reader;
-
-        ARROW_UNUSED(rows_read);
-
-        column_reader = row_group_reader->Column(column_index);
-        parquet::Int64Reader *int64_reader = static_cast<parquet::Int64Reader *>(column_reader.get());
-
-        i = 1;
-        while (int64_reader->HasNext()) {
-            int64_t value;
-            // Read one value at a time. The number of rows read is returned. values_read
-            // contains the number of non-null rows
-            rows_read = int64_reader->ReadBatch(1, &definition_level, &repetition_level, &value, &values_read);
-
-            if (i <= OUTPUT_SIZE) {
-                print_data(rows_read, definition_level, repetition_level, value, values_read, i);
-            }
-            i++;
-        }
-
-        column_index++;
-
-        column_reader = row_group_reader->Column(column_index);
-        int64_reader = static_cast<parquet::Int64Reader *>(column_reader.get());
-
-        i = 1;
-        while (int64_reader->HasNext()) {
-            int64_t value;
-            // Read one value at a time. The number of rows read is returned. values_read
-            // contains the number of non-null rows
-            rows_read = int64_reader->ReadBatch(1, &definition_level, &repetition_level, &value, &values_read);
-
-            if (i <= OUTPUT_SIZE) {
-                print_data(rows_read, definition_level, repetition_level, value, values_read, i);
-            }
-            i++;
-        }
-
-        column_index++;
-
-//
-//            // Get the Column Reader for the boolean column
-//            column_reader = row_group_reader->Column(0);
-//            parquet::BoolReader* bool_reader =
-//                    static_cast<parquet::BoolReader*>(column_reader.get());
-//
-//            // Read all the rows in the column
-//            i = 0;
-//            while (bool_reader->HasNext()) {
-//                bool value;
-//                // Read one value at a time. The number of rows read is returned. values_read
-//                // contains the number of non-null rows
-//                rows_read = bool_reader->ReadBatch(1, nullptr, nullptr, &value, &values_read);
-//                // Ensure only one value is read
-//                assert(rows_read == 1);
-//                // There are no NULL values in the rows written
-//                assert(values_read == 1);
-//                // Verify the value written
-//                bool expected_value = ((i % 2) == 0) ? true : false;
-//                assert(value == expected_value);
-//                i++;
-//            }
-//
-//            // Get the Column Reader for the Int32 column
-//            column_reader = row_group_reader->Column(1);
-//            parquet::Int32Reader* int32_reader =
-//                    static_cast<parquet::Int32Reader*>(column_reader.get());
-//            // Read all the rows in the column
-//            i = 0;
-//            while (int32_reader->HasNext()) {
-//                int32_t value;
-//                // Read one value at a time. The number of rows read is returned. values_read
-//                // contains the number of non-null rows
-//                rows_read = int32_reader->ReadBatch(1, nullptr, nullptr, &value, &values_read);
-//                // Ensure only one value is read
-//                assert(rows_read == 1);
-//                // There are no NULL values in the rows written
-//                assert(values_read == 1);
-//                // Verify the value written
-//                assert(value == i);
-//                i++;
-//            }
-//
-//            // Get the Column Reader for the Int64 column
-//            column_reader = row_group_reader->Column(2);
-//            parquet::Int64Reader* int64_reader =
-//                    static_cast<parquet::Int64Reader*>(column_reader.get());
-//            // Read all the rows in the column
-//            i = 0;
-//            while (int64_reader->HasNext()) {
-//                int64_t value;
-//                // Read one value at a time. The number of rows read is returned. values_read
-//                // contains the number of non-null rows
-//                rows_read = int64_reader->ReadBatch(1, &definition_level, &repetition_level,
-//                                                    &value, &values_read);
-//                // Ensure only one value is read
-//                assert(rows_read == 1);
-//                // There are no NULL values in the rows written
-//                assert(values_read == 1);
-//                // Verify the value written
-//                int64_t expected_value = i * 1000 * 1000;
-//                expected_value *= 1000 * 1000;
-//                assert(value == expected_value);
-//                if ((i % 2) == 0) {
-//                    assert(repetition_level == 1);
-//                } else {
-//                    assert(repetition_level == 0);
-//                }
-//                i++;
-//            }
-//
-//            // Get the Column Reader for the Int96 column
-//            column_reader = row_group_reader->Column(3);
-//            parquet::Int96Reader* int96_reader =
-//                    static_cast<parquet::Int96Reader*>(column_reader.get());
-//            // Read all the rows in the column
-//            i = 0;
-//            while (int96_reader->HasNext()) {
-//                parquet::Int96 value;
-//                // Read one value at a time. The number of rows read is returned. values_read
-//                // contains the number of non-null rows
-//                rows_read = int96_reader->ReadBatch(1, nullptr, nullptr, &value, &values_read);
-//                // Ensure only one value is read
-//                assert(rows_read == 1);
-//                // There are no NULL values in the rows written
-//                assert(values_read == 1);
-//                // Verify the value written
-//                parquet::Int96 expected_value;
-//                ARROW_UNUSED(expected_value); // prevent warning in release build
-//                expected_value.value[0] = i;
-//                expected_value.value[1] = i + 1;
-//                expected_value.value[2] = i + 2;
-//                for (int j = 0; j < 3; j++) {
-//                    assert(value.value[j] == expected_value.value[j]);
-//                }
-//                i++;
-//            }
-//
-//            // Get the Column Reader for the Float column
-//            column_reader = row_group_reader->Column(4);
-//            parquet::FloatReader* float_reader =
-//                    static_cast<parquet::FloatReader*>(column_reader.get());
-//            // Read all the rows in the column
-//            i = 0;
-//            while (float_reader->HasNext()) {
-//                float value;
-//                // Read one value at a time. The number of rows read is returned. values_read
-//                // contains the number of non-null rows
-//                rows_read = float_reader->ReadBatch(1, nullptr, nullptr, &value, &values_read);
-//                // Ensure only one value is read
-//                assert(rows_read == 1);
-//                // There are no NULL values in the rows written
-//                assert(values_read == 1);
-//                // Verify the value written
-//                float expected_value = static_cast<float>(i) * 1.1f;
-//                assert(value == expected_value);
-//                i++;
-//            }
-//
-//            // Get the Column Reader for the Double column
-//            column_reader = row_group_reader->Column(5);
-//            parquet::DoubleReader* double_reader =
-//                    static_cast<parquet::DoubleReader*>(column_reader.get());
-//            // Read all the rows in the column
-//            i = 0;
-//            while (double_reader->HasNext()) {
-//                double value;
-//                // Read one value at a time. The number of rows read is returned. values_read
-//                // contains the number of non-null rows
-//                rows_read = double_reader->ReadBatch(1, nullptr, nullptr, &value, &values_read);
-//                // Ensure only one value is read
-//                assert(rows_read == 1);
-//                // There are no NULL values in the rows written
-//                assert(values_read == 1);
-//                // Verify the value written
-//                double expected_value = i * 1.1111111;
-//                assert(value == expected_value);
-//                i++;
-//            }
-//
-//            // Get the Column Reader for the ByteArray column
-//            column_reader = row_group_reader->Column(6);
-//            parquet::ByteArrayReader* ba_reader =
-//                    static_cast<parquet::ByteArrayReader*>(column_reader.get());
-//            // Read all the rows in the column
-//            i = 0;
-//            while (ba_reader->HasNext()) {
-//                parquet::ByteArray value;
-//                // Read one value at a time. The number of rows read is returned. values_read
-//                // contains the number of non-null rows
-//                rows_read =
-//                        ba_reader->ReadBatch(1, &definition_level, nullptr, &value, &values_read);
-//                // Ensure only one value is read
-//                assert(rows_read == 1);
-//                // Verify the value written
-//                char expected_value[FIXED_LENGTH] = "parquet";
-//                ARROW_UNUSED(expected_value); // prevent warning in release build
-//                expected_value[7] = static_cast<char>('0' + i / 100);
-//                expected_value[8] = static_cast<char>('0' + (i / 10) % 10);
-//                expected_value[9] = static_cast<char>('0' + i % 10);
-//                if (i % 2 == 0) {  // only alternate values exist
-//                    // There are no NULL values in the rows written
-//                    assert(values_read == 1);
-//                    assert(value.len == FIXED_LENGTH);
-//                    assert(memcmp(value.ptr, &expected_value[0], FIXED_LENGTH) == 0);
-//                    assert(definition_level == 1);
-//                } else {
-//                    // There are NULL values in the rows written
-//                    assert(values_read == 0);
-//                    assert(definition_level == 0);
-//                }
-//                i++;
-//            }
-//
-//            // Get the Column Reader for the FixedLengthByteArray column
-//            column_reader = row_group_reader->Column(7);
-//            parquet::FixedLenByteArrayReader* flba_reader =
-//                    static_cast<parquet::FixedLenByteArrayReader*>(column_reader.get());
-//            // Read all the rows in the column
-//            i = 0;
-//            while (flba_reader->HasNext()) {
-//                parquet::FixedLenByteArray value;
-//                // Read one value at a time. The number of rows read is returned. values_read
-//                // contains the number of non-null rows
-//                rows_read = flba_reader->ReadBatch(1, nullptr, nullptr, &value, &values_read);
-//                // Ensure only one value is read
-//                assert(rows_read == 1);
-//                // There are no NULL values in the rows written
-//                assert(values_read == 1);
-//                // Verify the value written
-//                char v = static_cast<char>(i);
-//                char expected_value[FIXED_LENGTH] = {v, v, v, v, v, v, v, v, v, v};
-//                assert(memcmp(value.ptr, &expected_value[0], FIXED_LENGTH) == 0);
-//                i++;
-//            }
-    }
-}
-
 int get_all_files_path(std::string dhl_name, std::vector<std::vector<std::string>> &file_paths_all_nodes) {
     // CONSTANTS declaration, could move else where for more flexibility
     int NODES_COUNT = 6;
     std::string DHL_ROOT_PATH = "/mnt/nodes/";
-    //DHL_ROOT_PATH = "/Users/wen/github/arrow/data/test_dirs/";
+    DHL_ROOT_PATH = "/Users/wen/github/arrow/data/test_dirs/";
     std::string DIE_ROW = "dierow_";
     std::string SWATH = "swath_";
     std::string CH0PATCH = "channel0.patch";
@@ -465,6 +205,7 @@ int get_all_files_path(std::string dhl_name, std::vector<std::vector<std::string
 
     for (int i = 0; i < NODES_COUNT; i++) {
         std::vector<std::string> file_paths;
+        file_paths.reserve(2100);
 
         std::string worker_node_path = "R" + std::to_string(i) + "C0S/";
         std::string dhl_path = DHL_ROOT_PATH + worker_node_path + dhl_name;
@@ -528,33 +269,32 @@ int get_all_files_path(std::string dhl_name, std::vector<std::vector<std::string
         file_paths_all_nodes.push_back(file_paths);
     }
 
-    return 1;
+    return EXIT_SUCCESS;
+}
+
+void print_schema(std::unordered_map<std::string, std::string> const &source_schema_map) {
+    std::cout << "******** Schema ******** = " << std::endl;
+    int i = 1;
+    for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
+        std::cout << i++ << ": " << itr->first << "  " << itr->second << std::endl;
+    }
 }
 
 arrow::Status VectorToColumnarTable(const std::vector<DhlRecord>& rows,
                                     std::shared_ptr<arrow::Table>* table) {
-    // The builders are more efficient using
-    // arrow::jemalloc::MemoryPool::default_pool() as this can increase the size of
-    // the underlying memory regions in-place. At the moment, arrow::jemalloc is only
-    // supported on Unix systems, not Windows.
+
     arrow::MemoryPool* pool = arrow::default_memory_pool();
 
     Int64Builder x_builder(pool);
     Int64Builder y_builder(pool);
     Int64Builder id_builder(pool);
 
-    // Now we can loop over our existing data and insert it into the builders. The
-    // `Append` calls here may fail (e.g. we cannot allocate enough additional memory).
-    // Thus we need to check their return values. For more information on these values,
-    // check the documentation about `arrow::Status`.
     for (const DhlRecord& row : rows) {
         ARROW_RETURN_NOT_OK(x_builder.Append(row.defectKey$swathX));
         ARROW_RETURN_NOT_OK(y_builder.Append(row.defectKey$swathY));
         ARROW_RETURN_NOT_OK(id_builder.Append(row.defectKey$defectID));
     }
 
-    // At the end, we finalise the arrays, declare the (type) schema and combine them
-    // into a single `arrow::Table`:
     std::shared_ptr<arrow::Array> x_array;
     ARROW_RETURN_NOT_OK(x_builder.Finish(&x_array));
 
@@ -571,16 +311,12 @@ arrow::Status VectorToColumnarTable(const std::vector<DhlRecord>& rows,
 
     auto schema = std::make_shared<arrow::Schema>(schema_vector);
 
-    // The final `table` variable is the one we then can pass on to other functions
-    // that can consume Apache Arrow memory structures. This object has ownership of
-    // all referenced data, thus we don't have to care about undefined references once
-    // we leave the scope of the function building the table and its underlying arrays.
     *table = arrow::Table::Make(schema, {x_array, y_array, id_array});
 
     return arrow::Status::OK();
 }
 
-int load_data_to_arrow(std::string file_path) {
+int get_schema(std::string file_path, std::unordered_map<std::string, std::string>& source_schema_map) {
     sqlite3* pDb;
     int flags = (SQLITE_OPEN_READONLY);
 
@@ -597,7 +333,7 @@ int load_data_to_arrow(std::string file_path) {
         } else {
             std::cerr << "Unable to get DB handle" << std::endl;
         }
-        return 0;
+        return EXIT_FAILURE;
     }
 
     //std::string strKey = "sAr5w3Vk5l";
@@ -620,7 +356,7 @@ int load_data_to_arrow(std::string file_path) {
         return 0;
     }
 
-    std::string query = "SELECT * FROM attribTable;";
+    std::string query = "SELECT * FROM attribTable LIMIT 1;";
 
     sqlite3_stmt *stmt;
     bResult = sqlite3_prepare_v2(pDb, query.c_str(), -1, &stmt, NULL);
@@ -642,43 +378,246 @@ int load_data_to_arrow(std::string file_path) {
         return 0;
     }
 
-    std::vector<DhlRecord> records;
+    int col_count = sqlite3_column_count(stmt);
 
+    // create source db schema map as "column name: data type"
+    // we need this to generalize data scanning to create arrow column builder
+    // Also, arrow table creation needs to build similar schema
+    for (int i = 0; i < col_count; i++) {
+        std::string col_name = sqlite3_column_name(stmt, i);
+        std::string col_type = sqlite3_column_decltype(stmt, i);
+        source_schema_map[col_name] = col_type;
+    }
+    return EXIT_SUCCESS;
+}
+
+int load_data_to_arrow(std::string file_path, std::unordered_map<std::string, std::string> const &source_schema_map) {
+
+    arrow::MemoryPool* pool = arrow::default_memory_pool();
+
+    // Create a hashtable for each column type builder.
+    // The total count of all members of all hash tables should equal to the totol column count of the db.
+    //BIGINT Int64Builder
+    //DOUBLE DecimalBuilder
+    //BLOB BinaryBuilder
+    //FLOAT FloatingPointBuilder
+    //INTEGER IntBuilder;
+
+    std::unordered_map<std::string, std::shared_ptr<arrow::Int64Builder>> int64_builder_map;
+    std::unordered_map<std::string, std::shared_ptr<arrow::Decimal128Builder>> decimal_builder_map;
+    std::unordered_map<std::string, std::shared_ptr<arrow::BinaryBuilder>> binary_builder_map;
+    std::unordered_map<std::string, std::shared_ptr<arrow::Int32Builder>> int_builder_map;
+
+    for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
+        if ("BIGINT" == itr->second) {
+            int64_builder_map[itr->first] = std::make_shared<arrow::Int64Builder>(arrow::int64(), pool);
+
+        } else if ("DOUBLE" == itr->second || "FLOAT" == itr->second) {
+            auto type = std::make_shared<arrow::Decimal128Type>(16, 4);
+            decimal_builder_map[itr->first] = std::make_shared<arrow::Decimal128Builder>(type, pool);
+        } else if ("BLOB" == itr->second) {
+            binary_builder_map[itr->first] = std::make_shared<arrow::BinaryBuilder>(pool);
+        } else if ("INTEGER" == itr->second) {
+            int_builder_map[itr->first] = std::make_shared<arrow::Int32Builder>(pool);
+        }
+    }
+//    auto type = std::make_shared<arrow::Decimal128Type>(16, 4);
+//    arrow::DecimalBuilder builder(type, pool);
+//
+//    arrow::Decimal128 str_value;
+//    int32_t str_precision = 32;
+//    int32_t str_scale = 8;
+//    std::string str = "1234";
+
+
+//        uint64_t low = 1;
+//        int64_t high = 2;
+////        if (large_) {
+////            high += (1ull << 62);
+////        }
+//        arrow::Decimal128(high, low);
+
+
+    //DCHECK_OK(arrow::Decimal128::FromString(str, &str_value, &str_precision, &str_scale));
+
+//    builder.Append(arrow::Decimal128(2389, 1));
+
+
+
+    //    std::cout << "BIGINT map contains: = " << int64_builder_map.size() << std::endl;
+//    std::cout << "Decimal = " << decimal_builder_map.size() << std::endl;
+//    std::cout << "BLOB = " << binary_builder_map.size() << std::endl;
+//    std::cout << "INTEGER = " << int_builder_map.size() << std::endl;
+
+    sqlite3* pDb;
+    int flags = (SQLITE_OPEN_READONLY);
+
+    int bResult = sqlite3_open_v2(file_path.c_str(), &pDb, flags, NULL);
+
+    if (SQLITE_OK != bResult) {
+        sqlite3_close(pDb);
+        std::cerr << "Cannot Open DB: " << bResult << std::endl;
+
+        if (nullptr != pDb) {
+            std::string strMsg = sqlite3_errmsg(pDb);
+            sqlite3_close_v2(pDb);
+            pDb = nullptr;
+        } else {
+            std::cerr << "Unable to get DB handle" << std::endl;
+        }
+        return EXIT_FAILURE;
+    }
+
+    //std::string strKey = "sAr5w3Vk5l";
+    std::string strKey = "e9FkChw3xF";
+    bResult = sqlite3_key_v2(pDb, nullptr, strKey.c_str(), static_cast<int>(strKey.size()));
+
+    if (SQLITE_OK != bResult) {
+        sqlite3_close(pDb);
+        std::cerr << "Cannot key the DB: " << bResult << std::endl;
+
+        if (nullptr != pDb) {
+            std::string strMsg = sqlite3_errmsg(pDb);
+            sqlite3_close_v2(pDb);
+            pDb = nullptr;
+            std::cerr << "SQLite Error Message: " << strMsg << std::endl;
+        } else {
+            std::cerr << "Unable to key the database" << std::endl;
+        }
+
+        return EXIT_FAILURE;
+    }
+
+    std::string query = "SELECT * FROM attribTable;";
+
+    sqlite3_stmt *stmt;
+    bResult = sqlite3_prepare_v2(pDb, query.c_str(), -1, &stmt, NULL);
+
+    if (SQLITE_OK != bResult) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(pDb);
+        std::cerr << "Cannot prepare statement from DB: " << bResult << std::endl;
+
+        if (nullptr != pDb) {
+            std::string strMsg = sqlite3_errmsg(pDb);
+            sqlite3_close_v2(pDb);
+            pDb = nullptr;
+            std::cerr << "SQLite Error Message: " << strMsg << std::endl;
+        } else {
+            std::cerr << "Unable to prepare SQLite statement" << std::endl;
+        }
+
+        return EXIT_FAILURE;
+    }
+
+    int col_count = sqlite3_column_count(stmt);
+    std::cout << "total col count = " << col_count << std::endl;
     while ((bResult = sqlite3_step(stmt)) == SQLITE_ROW) {
-        int col_index = 0;
-        int x = sqlite3_column_int64(stmt, col_index++);
-        int y = sqlite3_column_int64(stmt, col_index++);
-        int id = sqlite3_column_int64(stmt, col_index++);
+        for (int i = 0; i < col_count; i++) {
+            std::string col_name = sqlite3_column_name(stmt, i);
+            std::string col_type = sqlite3_column_decltype(stmt, i);
+            //std::cout << i << " col_name = " << col_name << ", col_type = " << col_type << std::endl;
 
-        records.emplace_back(x, y, id);
-        //const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, col_index++));
-        //const char* number = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-        //long value = static_cast<long>(sqlite3_column_int64(stmt, col_index++));
-        //std::cout << "id = " << id << ", x = " << x << std::endl;
+            if ("BIGINT" == col_type && int64_builder_map.find(col_name) != int64_builder_map.end()) {
+                std::shared_ptr<arrow::Int64Builder> builder = int64_builder_map[col_name];
+                builder->Append(sqlite3_column_int64(stmt, i));
+
+            } else if (("DOUBLE" == col_type || "FLOAT" == col_type)
+            && decimal_builder_map.find(col_name) != decimal_builder_map.end()) {
+                std::shared_ptr<arrow::Decimal128Builder> builder = decimal_builder_map[col_name];
+                double val = sqlite3_column_double(stmt, i);
+                builder->Append(arrow::Decimal128(0, val));
+
+            } else if ("BLOB" == col_type && binary_builder_map.find(col_name) != binary_builder_map.end()) {
+                std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
+
+                // read blob data from sqlite
+//                int length = sqlite3_column_bytes(stmt, 2);
+//                std::vector<char> data( length );
+//                const char *pBuffer = reinterpret_cast<const char*>( sqlite3_column_blob(stmt, i) );
+//                std::copy( pBuffer, pBuffer + data.size(), &data[0] );
+
+                // create blob data for arrow
+                const int kBufferSize = 10;
+                uint8_t buffer[kBufferSize];
+                arrow::random_bytes(kBufferSize, static_cast<uint32_t>(i), buffer);
+                builder->Append(buffer, kBufferSize);
+
+            } else if ("INTEGER" == col_type && int_builder_map.find(col_name) != int_builder_map.end()) {
+                std::shared_ptr<arrow::Int32Builder> builder = int_builder_map[col_name];
+                builder->Append(sqlite3_column_int(stmt, i));
+            }
+        }
+
+        break;
     }
-    if (bResult != SQLITE_DONE) {
-        std::cerr << "SELECT failed: " << sqlite3_errmsg(pDb) << std::endl;
-        // if you return/throw here, don't forget the finalize
-    }
+
+//    if (bResult != SQLITE_DONE) {
+//        std::cerr << "SELECT failed: " << sqlite3_errmsg(pDb) << ".  The result value is " << bResult << std::endl;
+//        // if you return/throw here, don't forget the finalize
+//    }
 
     sqlite3_finalize(stmt);
     sqlite3_close(pDb);
 
-//    for (DhlRecord record : records) {
-//        std::cout << "Record obj: x = " << record.defectKey$swathX << ".  y = " << record.defectKey$swathY << ". id = " << record.defectKey$defectID << std::endl;
+//    for (auto itr = int64_builder_map.begin(); itr != int64_builder_map.end(); itr++) {
+//        std::cout << "For column: " << itr->first << ", we have " << int64_builder_map[itr->first]->length() << std::endl;
 //    }
+
+    // create arrow arrays for each column
+    std::vector<std::shared_ptr<arrow::Array>> arrays;
+    std::vector<std::shared_ptr<arrow::Field>> schema_vector;
+    for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
+        std::string col_name = itr->first;
+        std::string col_type = itr->second;
+
+        std::shared_ptr<arrow::Array> array;
+        if ("BIGINT" == col_type && int64_builder_map.find(col_name) != int64_builder_map.end()) {
+            schema_vector.emplace_back(arrow::field(col_name, arrow::int64()));
+
+            std::shared_ptr<arrow::Int64Builder> builder = int64_builder_map[col_name];
+            builder->Finish(&array);
+
+        } else if (("DOUBLE" == col_type || "FLOAT" == col_type)
+                   && decimal_builder_map.find(col_name) != decimal_builder_map.end()) {
+            //schema_vector.emplace_back(arrow::field(col_name, arrow::DecimalType()));
+
+            std::shared_ptr<arrow::Decimal128Builder> builder = decimal_builder_map[col_name];
+            builder->Finish(&array);
+
+        } else if ("BLOB" == col_type && binary_builder_map.find(col_name) != binary_builder_map.end()) {
+            //schema_vector.emplace_back(arrow::field(col_name, arrow::BinaryType()));
+
+            std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
+            builder->Finish(&array);
+
+        } else if ("INTEGER" == col_type && int_builder_map.find(col_name) != int_builder_map.end()) {
+            schema_vector.emplace_back(arrow::field(col_name, arrow::int32()));
+
+            std::shared_ptr<arrow::Int32Builder> builder = int_builder_map[col_name];
+            builder->Finish(&array);
+        }
+
+        arrays.emplace_back(array);
+    }
+
+    auto schema = std::make_shared<arrow::Schema>(schema_vector);
+    std::shared_ptr<arrow::Table> table = arrow::Table::Make(schema, arrays);
+
     // Now we have a list of records, next we populate an arrow table
-    std::shared_ptr<arrow::Table> table;
-    EXIT_ON_FAILURE(VectorToColumnarTable(records, &table));
+    //std::shared_ptr<arrow::Table> table;
+    //EXIT_ON_FAILURE(VectorToColumnarTable(records, &table));
     //VectorToColumnarTable(records, &table);
 
     //std::cout << "Arrows Loaded " << table->num_rows() << " total rows in " << table->num_columns() << " columns." << std::endl;
     return 0;
 }
 
-void process_each_node(std::vector<std::string> const &file_paths) {
+void process_each_node(std::vector<std::string> const &file_paths, std::unordered_map<std::string, std::string> const &source_schema_map) {
     for (auto file_path : file_paths) {
-        load_data_to_arrow(file_path);
+        load_data_to_arrow(file_path, source_schema_map);
+        std::cout << "data file name = " << file_path << std::endl;
+        break;
     }
 }
 
@@ -694,45 +633,41 @@ int main(int argc, char** argv) {
     std::vector<std::vector<std::string>> file_paths_all_nodes;
     get_all_files_path(dhl_name, file_paths_all_nodes);
 
+    auto stop1 = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_seconds = stop1 - start;
+    std::cout << "Patch file paths collection finished. The elapsed time: " << elapsed_seconds.count() << " seconds\n";
+
     for (auto file_paths: file_paths_all_nodes) {
         std::cout << "Files count per node = " << file_paths.size() << std::endl;
-        //std::cout << "first element = " << file_paths.front() << std::endl;
-        //std::cout << "last element = " << file_paths.back() << std::endl;
     }
+
+    // create data source db schema, as it's needed for arrow table creation
+    // it's better to get schema here, because every thread need the same schema object
+    std::unordered_map<std::string, std::string> source_schema_map;
+    get_schema(file_paths_all_nodes.front().front(), source_schema_map);
+    std::cout << "schema file name = " << file_paths_all_nodes.front().front() << std::endl;
+    print_schema(source_schema_map);
 
     // thread list to join later
     std::vector<std::thread> threads;
 
     for (auto file_paths : file_paths_all_nodes) {
         std::cout << "Creating a new thread to process files per node...." << std::endl;
-        threads.push_back(std::thread(process_each_node, file_paths));
+        threads.push_back(std::thread(process_each_node, file_paths, source_schema_map));
+        break;
     }
 
     std::cout << "All threads have been started...." << std::endl;
+
     for (auto& th : threads) {
         th.join();
     }
     std::cout << "All threads finished their work." << std::endl;
 
     auto end = std::chrono::steady_clock::now();
-    std::chrono::duration<double> elapsed_seconds = end - start;
-    std::cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
+    elapsed_seconds = end - start;
+    std::cout << "Total elapsed time: " << elapsed_seconds.count() << "s\n";
 
     return 0;
-//    try {
-//        auto start = std::chrono::steady_clock::now();
-//
-//        load_data_from_folder(input_folder_path);
-//
-//        auto end = std::chrono::steady_clock::now();
-//        std::chrono::duration<double> elapsed_seconds = end - start;
-//        std::cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
-//
-//    } catch (const std::exception& e) {
-//        std::std::cerr << "Parquet read error: " << e.what() << std::endl;
-//        return -1;
-//    }
-//
-//    std::cout << "Parquet Reading Completed!" << std::endl;
 }
 
