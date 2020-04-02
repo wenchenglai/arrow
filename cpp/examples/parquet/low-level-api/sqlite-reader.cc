@@ -33,6 +33,8 @@
 //#include <parquet/arrow/writer.h>
 
 using arrow::Int64Builder;
+const int ARROW_DECIMAL_PRECISION = 38;
+const int ARROW_DECIMAL_SCALE = 6;
 
 #define EXIT_ON_FAILURE(expr)                      \
   do {                                             \
@@ -379,6 +381,7 @@ int get_schema(std::string file_path, std::unordered_map<std::string, std::strin
     }
 
     int col_count = sqlite3_column_count(stmt);
+    std::cout << "Total column count is " << col_count << std::endl;
 
     // create source db schema map as "column name: data type"
     // we need this to generalize data scanning to create arrow column builder
@@ -413,7 +416,7 @@ int load_data_to_arrow(std::string file_path, std::unordered_map<std::string, st
             int64_builder_map[itr->first] = std::make_shared<arrow::Int64Builder>(arrow::int64(), pool);
 
         } else if ("DOUBLE" == itr->second || "FLOAT" == itr->second) {
-            auto type = std::make_shared<arrow::Decimal128Type>(16, 4);
+            auto type = std::make_shared<arrow::Decimal128Type>(ARROW_DECIMAL_PRECISION, ARROW_DECIMAL_SCALE);
             decimal_builder_map[itr->first] = std::make_shared<arrow::Decimal128Builder>(type, pool);
         } else if ("BLOB" == itr->second) {
             binary_builder_map[itr->first] = std::make_shared<arrow::BinaryBuilder>(pool);
@@ -421,33 +424,6 @@ int load_data_to_arrow(std::string file_path, std::unordered_map<std::string, st
             int_builder_map[itr->first] = std::make_shared<arrow::Int32Builder>(pool);
         }
     }
-//    auto type = std::make_shared<arrow::Decimal128Type>(16, 4);
-//    arrow::DecimalBuilder builder(type, pool);
-//
-//    arrow::Decimal128 str_value;
-//    int32_t str_precision = 32;
-//    int32_t str_scale = 8;
-//    std::string str = "1234";
-
-
-//        uint64_t low = 1;
-//        int64_t high = 2;
-////        if (large_) {
-////            high += (1ull << 62);
-////        }
-//        arrow::Decimal128(high, low);
-
-
-    //DCHECK_OK(arrow::Decimal128::FromString(str, &str_value, &str_precision, &str_scale));
-
-//    builder.Append(arrow::Decimal128(2389, 1));
-
-
-
-    //    std::cout << "BIGINT map contains: = " << int64_builder_map.size() << std::endl;
-//    std::cout << "Decimal = " << decimal_builder_map.size() << std::endl;
-//    std::cout << "BLOB = " << binary_builder_map.size() << std::endl;
-//    std::cout << "INTEGER = " << int_builder_map.size() << std::endl;
 
     sqlite3* pDb;
     int flags = (SQLITE_OPEN_READONLY);
@@ -511,7 +487,7 @@ int load_data_to_arrow(std::string file_path, std::unordered_map<std::string, st
     }
 
     int col_count = sqlite3_column_count(stmt);
-    std::cout << "total col count = " << col_count << std::endl;
+
     while ((bResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         for (int i = 0; i < col_count; i++) {
             std::string col_name = sqlite3_column_name(stmt, i);
@@ -548,8 +524,7 @@ int load_data_to_arrow(std::string file_path, std::unordered_map<std::string, st
                 builder->Append(sqlite3_column_int(stmt, i));
             }
         }
-
-        break;
+        // break;
     }
 
 //    if (bResult != SQLITE_DONE) {
@@ -580,13 +555,13 @@ int load_data_to_arrow(std::string file_path, std::unordered_map<std::string, st
 
         } else if (("DOUBLE" == col_type || "FLOAT" == col_type)
                    && decimal_builder_map.find(col_name) != decimal_builder_map.end()) {
-            //schema_vector.emplace_back(arrow::field(col_name, arrow::DecimalType()));
+            schema_vector.emplace_back(arrow::field(col_name, arrow::decimal(ARROW_DECIMAL_PRECISION, ARROW_DECIMAL_SCALE)));
 
             std::shared_ptr<arrow::Decimal128Builder> builder = decimal_builder_map[col_name];
             builder->Finish(&array);
 
         } else if ("BLOB" == col_type && binary_builder_map.find(col_name) != binary_builder_map.end()) {
-            //schema_vector.emplace_back(arrow::field(col_name, arrow::BinaryType()));
+            schema_vector.emplace_back(arrow::field(col_name, arrow::binary()));
 
             std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
             builder->Finish(&array);
@@ -604,20 +579,14 @@ int load_data_to_arrow(std::string file_path, std::unordered_map<std::string, st
     auto schema = std::make_shared<arrow::Schema>(schema_vector);
     std::shared_ptr<arrow::Table> table = arrow::Table::Make(schema, arrays);
 
-    // Now we have a list of records, next we populate an arrow table
-    //std::shared_ptr<arrow::Table> table;
-    //EXIT_ON_FAILURE(VectorToColumnarTable(records, &table));
-    //VectorToColumnarTable(records, &table);
-
-    //std::cout << "Arrows Loaded " << table->num_rows() << " total rows in " << table->num_columns() << " columns." << std::endl;
+    std::cout << "Arrows Loaded " << table->num_rows() << " total rows in " << table->num_columns() << " columns." << std::endl;
     return 0;
 }
 
 void process_each_node(std::vector<std::string> const &file_paths, std::unordered_map<std::string, std::string> const &source_schema_map) {
     for (auto file_path : file_paths) {
         load_data_to_arrow(file_path, source_schema_map);
-        std::cout << "data file name = " << file_path << std::endl;
-        break;
+        // break;
     }
 }
 
@@ -645,8 +614,7 @@ int main(int argc, char** argv) {
     // it's better to get schema here, because every thread need the same schema object
     std::unordered_map<std::string, std::string> source_schema_map;
     get_schema(file_paths_all_nodes.front().front(), source_schema_map);
-    std::cout << "schema file name = " << file_paths_all_nodes.front().front() << std::endl;
-    print_schema(source_schema_map);
+    //print_schema(source_schema_map);
 
     // thread list to join later
     std::vector<std::thread> threads;
@@ -654,7 +622,7 @@ int main(int argc, char** argv) {
     for (auto file_paths : file_paths_all_nodes) {
         std::cout << "Creating a new thread to process files per node...." << std::endl;
         threads.push_back(std::thread(process_each_node, file_paths, source_schema_map));
-        break;
+        //break;
     }
 
     std::cout << "All threads have been started...." << std::endl;
