@@ -47,6 +47,18 @@ Test data is located at arrow/data folder, there are multiple parquet files.
 
 ## Test on ViX
 
+Copy the binary to vi3-0009 user/release folder
+
+ssh storage008
+
+cd /Volumes/localStorage2/Users/wenlai/release
+
+export LD_LIBRARY_PATH=.
+
+./sqlite-reader M1MOP_W93_FWDHLOSTS_T1_20190813165257
+
+./dhl-reader /mnt/nodes/R6C0S/etlparquet20200323-8
+
 Set proper library path
 
 `export LD_LIBRARY_PATH=.`
@@ -54,6 +66,12 @@ Set proper library path
 Observe search path:
 
 `LD_DEBUG`
+
+## clean the server disk cache
+
+cd /Volumes/localStorage2/bin
+
+on_spark_nodes clean_disk_cache
 
 ## Installation
 

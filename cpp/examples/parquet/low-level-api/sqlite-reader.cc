@@ -394,7 +394,10 @@ int get_schema(std::string file_path, std::unordered_map<std::string, std::strin
     return EXIT_SUCCESS;
 }
 
-int load_data_to_arrow(std::string file_path, std::unordered_map<std::string, std::string> const &source_schema_map) {
+int load_data_to_arrow(
+        std::string file_path,
+        std::unordered_map<std::string, std::string> const &source_schema_map,
+        std::shared_ptr<arrow::Table>* table) {
 
     arrow::MemoryPool* pool = arrow::default_memory_pool();
 
@@ -577,17 +580,26 @@ int load_data_to_arrow(std::string file_path, std::unordered_map<std::string, st
     }
 
     auto schema = std::make_shared<arrow::Schema>(schema_vector);
-    std::shared_ptr<arrow::Table> table = arrow::Table::Make(schema, arrays);
+    *table = arrow::Table::Make(schema, arrays);
 
-    std::cout << "Arrows Loaded " << table->num_rows() << " total rows in " << table->num_columns() << " columns." << std::endl;
+    //std::cout << "Arrows Loaded " << table->num_rows() << " total rows in " << table->num_columns() << " columns." << std::endl;
+
     return 0;
 }
 
 void process_each_node(std::vector<std::string> const &file_paths, std::unordered_map<std::string, std::string> const &source_schema_map) {
+    std::vector<std::shared_ptr<arrow::Table>> tables;
+
     for (auto file_path : file_paths) {
-        load_data_to_arrow(file_path, source_schema_map);
+        std::shared_ptr<arrow::Table> table;
+        load_data_to_arrow(file_path, source_schema_map, &table);
+        tables.push_back(table);
         // break;
     }
+
+    arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
+    std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
+    std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", columns size = " << result_table->num_columns() << std::endl;
 }
 
 int main(int argc, char** argv) {
