@@ -32,9 +32,6 @@
 #include <parquet/arrow/reader.h>
 //#include <parquet/arrow/writer.h>
 
-using arrow::Int64Builder;
-const int ARROW_DECIMAL_PRECISION = 38;
-const int ARROW_DECIMAL_SCALE = 6;
 
 #define EXIT_ON_FAILURE(expr)                      \
   do {                                             \
@@ -199,7 +196,11 @@ int get_all_files_path(std::string dhl_name, std::vector<std::vector<std::string
     // CONSTANTS declaration, could move else where for more flexibility
     int NODES_COUNT = 6;
     std::string DHL_ROOT_PATH = "/mnt/nodes/";
-    DHL_ROOT_PATH = "/Users/wen/github/arrow/data/test_dirs/";
+
+    if (!opendir(DHL_ROOT_PATH.c_str())) {
+        DHL_ROOT_PATH = "/Users/wen/github/arrow/data/test_dirs/";
+    }
+
     std::string DIE_ROW = "dierow_";
     std::string SWATH = "swath_";
     std::string CH0PATCH = "channel0.patch";
@@ -287,9 +288,9 @@ arrow::Status VectorToColumnarTable(const std::vector<DhlRecord>& rows,
 
     arrow::MemoryPool* pool = arrow::default_memory_pool();
 
-    Int64Builder x_builder(pool);
-    Int64Builder y_builder(pool);
-    Int64Builder id_builder(pool);
+    arrow::Int64Builder x_builder(pool);
+    arrow::Int64Builder y_builder(pool);
+    arrow::Int64Builder id_builder(pool);
 
     for (const DhlRecord& row : rows) {
         ARROW_RETURN_NOT_OK(x_builder.Append(row.defectKey$swathX));
@@ -404,13 +405,13 @@ int load_data_to_arrow(
     // Create a hashtable for each column type builder.
     // The total count of all members of all hash tables should equal to the totol column count of the db.
     //BIGINT Int64Builder
-    //DOUBLE DecimalBuilder
+    //DOUBLE DoubleBuilder
     //BLOB BinaryBuilder
     //FLOAT FloatingPointBuilder
     //INTEGER IntBuilder;
 
     std::unordered_map<std::string, std::shared_ptr<arrow::Int64Builder>> int64_builder_map;
-    std::unordered_map<std::string, std::shared_ptr<arrow::Decimal128Builder>> decimal_builder_map;
+    std::unordered_map<std::string, std::shared_ptr<arrow::DoubleBuilder>> double_builder_map;
     std::unordered_map<std::string, std::shared_ptr<arrow::BinaryBuilder>> binary_builder_map;
     std::unordered_map<std::string, std::shared_ptr<arrow::Int32Builder>> int_builder_map;
 
@@ -419,8 +420,8 @@ int load_data_to_arrow(
             int64_builder_map[itr->first] = std::make_shared<arrow::Int64Builder>(arrow::int64(), pool);
 
         } else if ("DOUBLE" == itr->second || "FLOAT" == itr->second) {
-            auto type = std::make_shared<arrow::Decimal128Type>(ARROW_DECIMAL_PRECISION, ARROW_DECIMAL_SCALE);
-            decimal_builder_map[itr->first] = std::make_shared<arrow::Decimal128Builder>(type, pool);
+            //auto type = std::make_shared<arrow::Decimal128Type>(ARROW_DECIMAL_PRECISION, ARROW_DECIMAL_SCALE);
+            double_builder_map[itr->first] = std::make_shared<arrow::DoubleBuilder>(pool);
         } else if ("BLOB" == itr->second) {
             binary_builder_map[itr->first] = std::make_shared<arrow::BinaryBuilder>(pool);
         } else if ("INTEGER" == itr->second) {
@@ -502,32 +503,27 @@ int load_data_to_arrow(
                 builder->Append(sqlite3_column_int64(stmt, i));
 
             } else if (("DOUBLE" == col_type || "FLOAT" == col_type)
-            && decimal_builder_map.find(col_name) != decimal_builder_map.end()) {
-                std::shared_ptr<arrow::Decimal128Builder> builder = decimal_builder_map[col_name];
+            && double_builder_map.find(col_name) != double_builder_map.end()) {
+                std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
                 double val = sqlite3_column_double(stmt, i);
-                builder->Append(arrow::Decimal128(0, val));
+                builder->Append(val);
 
             } else if ("BLOB" == col_type && binary_builder_map.find(col_name) != binary_builder_map.end()) {
-                std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
+                int blob_size = sqlite3_column_bytes(stmt, i);
+                if (blob_size > 0) {
+                    const uint8_t *pBuffer = reinterpret_cast<const uint8_t*>(sqlite3_column_blob(stmt, i));
+                    //uint8_t buffer[blob_size];
+                    //std::copy(pBuffer, pBuffer + blob_size, &buffer[0]);
 
-                // read blob data from sqlite
-//                int length = sqlite3_column_bytes(stmt, 2);
-//                std::vector<char> data( length );
-//                const char *pBuffer = reinterpret_cast<const char*>( sqlite3_column_blob(stmt, i) );
-//                std::copy( pBuffer, pBuffer + data.size(), &data[0] );
-
-                // create blob data for arrow
-                const int kBufferSize = 10;
-                uint8_t buffer[kBufferSize];
-                arrow::random_bytes(kBufferSize, static_cast<uint32_t>(i), buffer);
-                builder->Append(buffer, kBufferSize);
-
+                    std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
+                    builder->Append(pBuffer, blob_size);
+                }
             } else if ("INTEGER" == col_type && int_builder_map.find(col_name) != int_builder_map.end()) {
                 std::shared_ptr<arrow::Int32Builder> builder = int_builder_map[col_name];
                 builder->Append(sqlite3_column_int(stmt, i));
             }
         }
-        // break;
+        //break;
     }
 
 //    if (bResult != SQLITE_DONE) {
@@ -542,7 +538,9 @@ int load_data_to_arrow(
 //        std::cout << "For column: " << itr->first << ", we have " << int64_builder_map[itr->first]->length() << std::endl;
 //    }
 
-    // create arrow arrays for each column
+    // Two tasks are accomplished in here:
+    // 1. create arrow array for each column.  The whole arrays object will be used to create an Arrow Table
+    // 2. create a vector of Field (schema) along the way
     std::vector<std::shared_ptr<arrow::Array>> arrays;
     std::vector<std::shared_ptr<arrow::Field>> schema_vector;
     for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
@@ -557,10 +555,10 @@ int load_data_to_arrow(
             builder->Finish(&array);
 
         } else if (("DOUBLE" == col_type || "FLOAT" == col_type)
-                   && decimal_builder_map.find(col_name) != decimal_builder_map.end()) {
-            schema_vector.emplace_back(arrow::field(col_name, arrow::decimal(ARROW_DECIMAL_PRECISION, ARROW_DECIMAL_SCALE)));
+                   && double_builder_map.find(col_name) != double_builder_map.end()) {
+            schema_vector.emplace_back(arrow::field(col_name, arrow::float64()));
 
-            std::shared_ptr<arrow::Decimal128Builder> builder = decimal_builder_map[col_name];
+            std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
             builder->Finish(&array);
 
         } else if ("BLOB" == col_type && binary_builder_map.find(col_name) != binary_builder_map.end()) {
@@ -589,6 +587,7 @@ int load_data_to_arrow(
 
 void process_each_node(std::vector<std::string> const &file_paths, std::unordered_map<std::string, std::string> const &source_schema_map) {
     std::vector<std::shared_ptr<arrow::Table>> tables;
+    tables.reserve(2100);
 
     for (auto file_path : file_paths) {
         std::shared_ptr<arrow::Table> table;
