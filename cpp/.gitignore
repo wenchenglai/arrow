@@ -37,3 +37,7 @@ Testing/
 *.kdev4
 *.log
 *.swp
+
+######### release folders ######
+parquet_release/
+cmake-build-debug/
