@@ -192,7 +192,7 @@ int load_data_from_folder(std::string input_folder_path) {
     return 0;
 }
 
-int get_all_files_path(std::string dhl_name, std::vector<std::vector<std::string>> &file_paths_all_nodes) {
+int get_all_files_path(std::string dhl_name, std::string file_extension, std::vector<std::vector<std::string>> &file_paths_all_nodes) {
     // CONSTANTS declaration, could move else where for more flexibility
     int NODES_COUNT = 6;
     std::string DHL_ROOT_PATH = "/mnt/nodes/";
@@ -203,8 +203,8 @@ int get_all_files_path(std::string dhl_name, std::vector<std::vector<std::string
 
     std::string DIE_ROW = "dierow_";
     std::string SWATH = "swath_";
-    std::string CH0PATCH = "channel0.patch";
-    std::string CH1PATCH = "channel1.patch";
+    std::string CH0PATCH = "channel0." + file_extension;
+    std::string CH1PATCH = "channel1." + file_extension;
 
     for (int i = 0; i < NODES_COUNT; i++) {
         std::vector<std::string> file_paths;
@@ -603,15 +603,25 @@ void process_each_node(std::vector<std::string> const &file_paths, std::unordere
 
 int main(int argc, char** argv) {
     std::string dhl_name = "";
+    std::string file_extension = "patch";
     if (argc > 1) {
         dhl_name = argv[1];
+    }
+
+    if (argc > 2) {
+        file_extension = argv[2];
+    }
+
+    if (dhl_name == "") {
+        std::cout << "Please specify a DHL name" << std::endl;
+        return EXIT_FAILURE;
     }
 
     auto start = std::chrono::steady_clock::now();
 
     // we will create one vector of patch files per node
     std::vector<std::vector<std::string>> file_paths_all_nodes;
-    get_all_files_path(dhl_name, file_paths_all_nodes);
+    get_all_files_path(dhl_name, file_extension, file_paths_all_nodes);
 
     auto stop1 = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = stop1 - start;
