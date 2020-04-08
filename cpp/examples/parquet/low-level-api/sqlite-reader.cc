@@ -613,13 +613,13 @@ void process_each_node(std::vector<std::string> const &file_paths, std::unordere
     for (auto file_path : file_paths) {
         std::shared_ptr<arrow::Table> table;
         load_data_to_arrow(file_path, source_schema_map, &table);
-        tables.push_back(table);
+        //tables.push_back(table);
         // break;
     }
 
-    arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
-    std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
-    std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", columns size = " << result_table->num_columns() << std::endl;
+    //arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
+    //std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
+    //std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", columns size = " << result_table->num_columns() << std::endl;
 }
 
 int main(int argc, char** argv) {
