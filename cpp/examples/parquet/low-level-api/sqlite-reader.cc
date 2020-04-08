@@ -192,6 +192,19 @@ int load_data_from_folder(std::string input_folder_path) {
     return 0;
 }
 
+void tokenize(std::string const &str, const char delim, std::vector<std::string> &out)
+{
+    size_t start;
+    size_t end = 0;
+
+    while ((start = str.find_first_not_of(delim, end)) != std::string::npos)
+    {
+        end = str.find(delim, start);
+        out.push_back(str.substr(start, end - start));
+    }
+}
+
+
 int get_all_files_path(std::string dhl_name, std::string file_extension, std::vector<std::vector<std::string>> &file_paths_all_nodes) {
     // CONSTANTS declaration, could move else where for more flexibility
     int NODES_COUNT = 6;
@@ -244,11 +257,19 @@ int get_all_files_path(std::string dhl_name, std::string file_extension, std::ve
                                             struct dirent *swath_dir_item;
                                             while ((swath_dir_item = readdir(swath_dir)) != NULL) {
                                                 if (swath_dir_item->d_type == DT_REG) {
-                                                    std::string file_name = swath_dir_item->d_name;
+                                                    std::string full_path_file_name = swath_dir_item->d_name;
+                                                    const char delim = '/';
+                                                    std::vector<std::string> fileTokens;
 
-                                                    if (file_name.find(CH0PATCH) != std::string::npos
-                                                        || file_name.find(CH1PATCH) != std::string::npos) {
-                                                        file_paths.push_back(abs_swath_path + "/" + file_name);
+                                                    tokenize(full_path_file_name, delim, fileTokens);
+
+                                                    std::string file_name_only = fileTokens.back();
+
+                                                    //std::cout << "current file being considered = " << file_name_only << std::endl;
+
+                                                    if (file_name_only == CH0PATCH || file_name_only == CH1PATCH) {
+                                                        //std::cout << "accepted file = " << full_path_file_name << std::endl;
+                                                        file_paths.push_back(abs_swath_path + "/" + full_path_file_name);
                                                     }
                                                 }
                                             }
