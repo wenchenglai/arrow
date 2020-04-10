@@ -79,6 +79,27 @@ public:
     int64_t defectKey$defectID;
 };
 
+template<typename T>
+std::vector<std::vector<T>> split_vector(const std::vector<T>& vec, size_t n)
+{
+    std::vector<std::vector<T>> outVec;
+
+    size_t length = vec.size() / n;
+    size_t remain = vec.size() % n;
+
+    size_t begin = 0;
+    size_t end = 0;
+
+    for (size_t i = 0; i < std::min(n, vec.size()); ++i)
+    {
+        end += (remain > 0) ? (length + !!(remain--)) : length;
+        outVec.push_back(std::vector<T>(vec.begin() + begin, vec.begin() + end));
+        begin = end;
+    }
+
+    return outVec;
+}
+
 void print_data(int64_t rows_read, int16_t definition_level, int16_t repetition_level, int64_t value, int64_t values_read, int i) {
     std::cout << "rows_read = " << rows_read << std::endl;
     std::cout << "values_read = " << values_read << std::endl;
@@ -625,6 +646,8 @@ void process_each_node(std::vector<std::string> const &file_paths, std::unordere
 int main(int argc, char** argv) {
     std::string dhl_name = "";
     std::string file_extension = "patch";
+    int thread_count = 6;
+
     if (argc > 1) {
         dhl_name = argv[1];
     }
@@ -633,10 +656,16 @@ int main(int argc, char** argv) {
         file_extension = argv[2];
     }
 
+    if (argc > 3) {
+        thread_count = std::stoi(argv[3]);
+    }
+
     if (dhl_name == "") {
         std::cout << "Please specify a DHL name" << std::endl;
         return EXIT_FAILURE;
     }
+
+    std::cout << "DHL: " << dhl_name << ", extension: " << file_extension << ", thread count: " << thread_count << std::endl;
 
     auto start = std::chrono::steady_clock::now();
 
@@ -662,8 +691,16 @@ int main(int argc, char** argv) {
     std::vector<std::thread> threads;
 
     for (auto file_paths : file_paths_all_nodes) {
-        std::cout << "Creating a new thread to process files per node...." << std::endl;
-        threads.push_back(std::thread(process_each_node, file_paths, source_schema_map));
+        auto vec_with_thread_count = split_vector(file_paths, thread_count);
+
+        std::cout << "This nodes will have thread count " << vec_with_thread_count.size() << std::endl;
+
+        for (auto files : vec_with_thread_count) {
+            //std::cout << "Creating a thread to process files...." << std::endl;
+            std::cout << "This files has files count " << files.size() << std::endl;
+            threads.push_back(std::thread(process_each_node, files, source_schema_map));
+            // break;
+        }
         //break;
     }
 
