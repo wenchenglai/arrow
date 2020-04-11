@@ -22,6 +22,7 @@
 #include <iostream>
 #include <memory>
 #include <thread>
+#include <future>
 
 #include "reader_writer.h"
 #include "sqlite3.h"
@@ -63,8 +64,10 @@
 
 //namespace fs = std::__fs::filesystem;
 
-const char PARQUET_FILENAME[] = "dhl.parquet";
+//const char PARQUET_FILENAME[] = "dhl.parquet";
 const std::string PARQUET = ".parquet";
+const int NODES_COUNT = 6;
+//const int APPROX_FILES_COUNT_PER_NODE = 2100;  // for performance reason, we initialize vector with this value
 
 class DhlRecord {
 public:
@@ -225,10 +228,8 @@ void tokenize(std::string const &str, const char delim, std::vector<std::string>
     }
 }
 
-
-int get_all_files_path(std::string dhl_name, std::string file_extension, std::vector<std::vector<std::string>> &file_paths_all_nodes) {
+std::vector<std::string> get_all_files_path_per_node(std::string dhl_name, std::string file_extension, int node_index) {
     // CONSTANTS declaration, could move else where for more flexibility
-    int NODES_COUNT = 6;
     std::string DHL_ROOT_PATH = "/mnt/nodes/";
 
     if (!opendir(DHL_ROOT_PATH.c_str())) {
@@ -240,77 +241,75 @@ int get_all_files_path(std::string dhl_name, std::string file_extension, std::ve
     std::string CH0PATCH = "channel0." + file_extension;
     std::string CH1PATCH = "channel1." + file_extension;
 
-    for (int i = 0; i < NODES_COUNT; i++) {
-        std::vector<std::string> file_paths;
-        file_paths.reserve(2100);
+    std::vector<std::string> file_paths;
 
-        std::string worker_node_path = "R" + std::to_string(i) + "C0S/";
-        std::string dhl_path = DHL_ROOT_PATH + worker_node_path + dhl_name;
+    std::string worker_node_path = "R" + std::to_string(node_index) + "C0S/";
+    std::string dhl_path = DHL_ROOT_PATH + worker_node_path + dhl_name;
 
-        std::cout << "Top Level Path = " << dhl_path << std::endl;
+    std::cout << "Top Level Path = " << dhl_path << std::endl;
 
-        DIR *dhl_dir = nullptr;
-        if ((dhl_dir = opendir(dhl_path.c_str())) != NULL) {
-            struct dirent *dhl_dir_item;
+    DIR *dhl_dir = nullptr;
+    if ((dhl_dir = opendir(dhl_path.c_str())) != NULL) {
+        struct dirent *dhl_dir_item;
 
-            while ((dhl_dir_item = readdir(dhl_dir)) != NULL) {
-                if (dhl_dir_item->d_type == DT_DIR) {
-                    std::string die_row_folder_name = dhl_dir_item->d_name;
+        while ((dhl_dir_item = readdir(dhl_dir)) != NULL) {
+            if (dhl_dir_item->d_type == DT_DIR) {
+                std::string die_row_folder_name = dhl_dir_item->d_name;
 
-                    //std::cout << "die_row_folder_name = " << die_row_folder_name << std::endl;
+                if (die_row_folder_name.find(DIE_ROW) != std::string::npos) {
+                    DIR *die_row_dir = nullptr;
+                    std::string abs_die_row_path = dhl_path + "/" + die_row_folder_name;
+                    if ((die_row_dir = opendir(abs_die_row_path.c_str())) != NULL) {
+                        struct dirent *die_row_dir_item;
+                        while ((die_row_dir_item = readdir(die_row_dir)) != NULL) {
+                            if (die_row_dir_item->d_type == DT_DIR) {
+                                std::string swath_folder_name = die_row_dir_item->d_name;
 
-                    if (die_row_folder_name.find(DIE_ROW) != std::string::npos) {
-                        //std::cout << "die_row_folder_name2 = " << die_row_folder_name << std::endl;
-                        DIR *die_row_dir = nullptr;
-                        std::string abs_die_row_path = dhl_path + "/" + die_row_folder_name;
-                        if ((die_row_dir = opendir(abs_die_row_path.c_str())) != NULL) {
-                            struct dirent *die_row_dir_item;
-                            while ((die_row_dir_item = readdir(die_row_dir)) != NULL) {
-                                if (die_row_dir_item->d_type == DT_DIR) {
-                                    std::string swath_folder_name = die_row_dir_item->d_name;
+                                if (swath_folder_name.find(SWATH) != std::string::npos) {
+                                    DIR *swath_dir = nullptr;
+                                    std::string abs_swath_path = abs_die_row_path + "/" + swath_folder_name;
+                                    if ((swath_dir = opendir(abs_swath_path.c_str())) != NULL) {
+                                        struct dirent *swath_dir_item;
+                                        while ((swath_dir_item = readdir(swath_dir)) != NULL) {
+                                            if (swath_dir_item->d_type == DT_REG) {
+                                                std::string full_path_file_name = swath_dir_item->d_name;
+                                                const char delim = '/';
+                                                std::vector<std::string> fileTokens;
+                                                tokenize(full_path_file_name, delim, fileTokens);
+                                                std::string file_name_only = fileTokens.back();
 
-                                    //std::cout << "swath_folder_name = " << swath_folder_name << std::endl;
-
-                                    if (swath_folder_name.find(SWATH) != std::string::npos) {
-                                        DIR *swath_dir = nullptr;
-                                        std::string abs_swath_path = abs_die_row_path + "/" + swath_folder_name;
-                                        if ((swath_dir = opendir(abs_swath_path.c_str())) != NULL) {
-                                            struct dirent *swath_dir_item;
-                                            while ((swath_dir_item = readdir(swath_dir)) != NULL) {
-                                                if (swath_dir_item->d_type == DT_REG) {
-                                                    std::string full_path_file_name = swath_dir_item->d_name;
-                                                    const char delim = '/';
-                                                    std::vector<std::string> fileTokens;
-
-                                                    tokenize(full_path_file_name, delim, fileTokens);
-
-                                                    std::string file_name_only = fileTokens.back();
-
-                                                    //std::cout << "current file being considered = " << file_name_only << std::endl;
-
-                                                    if (file_name_only == CH0PATCH || file_name_only == CH1PATCH) {
-                                                        //std::cout << "accepted file = " << full_path_file_name << std::endl;
-                                                        file_paths.push_back(abs_swath_path + "/" + full_path_file_name);
-                                                    }
+                                                if (file_name_only == CH0PATCH || file_name_only == CH1PATCH) {
+                                                    //std::cout << "accepted file = " << full_path_file_name << std::endl;
+                                                    file_paths.push_back(abs_swath_path + "/" + full_path_file_name);
                                                 }
                                             }
-                                            closedir(swath_dir);
                                         }
+                                        closedir(swath_dir);
                                     }
                                 }
                             }
-                            closedir(die_row_dir);
                         }
-
+                        closedir(die_row_dir);
                     }
                 }
             }
-            closedir(dhl_dir);
-        } else {
-            /* could not open directory */
-            perror ("");
-            return EXIT_FAILURE;
         }
+        closedir(dhl_dir);
+    }
+    return file_paths;
+}
+
+
+int get_all_files_path(std::string dhl_name, std::string file_extension, std::vector<std::vector<std::string>> &file_paths_all_nodes) {
+
+    std::vector<std::future<std::vector<std::string>>> futures;
+    for (int i = 0; i < NODES_COUNT; i++) {
+        std::future<std::vector<std::string>> future = std::async(std::launch::async, get_all_files_path_per_node, dhl_name, file_extension, i);
+        futures.push_back(std::move(future));
+    }
+
+    for (auto&& future : futures) {
+        std::vector<std::string> file_paths = future.get();
         file_paths_all_nodes.push_back(file_paths);
     }
 
@@ -629,7 +628,6 @@ int load_data_to_arrow(
 
 void process_each_node(std::vector<std::string> const &file_paths, std::unordered_map<std::string, std::string> const &source_schema_map) {
     std::vector<std::shared_ptr<arrow::Table>> tables;
-    tables.reserve(2100);
 
     for (auto file_path : file_paths) {
         std::shared_ptr<arrow::Table> table;
@@ -646,7 +644,7 @@ void process_each_node(std::vector<std::string> const &file_paths, std::unordere
 int main(int argc, char** argv) {
     std::string dhl_name = "";
     std::string file_extension = "patch";
-    int thread_count = 6;
+    int thread_count_per_node = 1;
 
     if (argc > 1) {
         dhl_name = argv[1];
@@ -657,7 +655,13 @@ int main(int argc, char** argv) {
     }
 
     if (argc > 3) {
-        thread_count = std::stoi(argv[3]);
+        int input_thread_count = std::stoi(argv[3]);
+
+        if (input_thread_count < NODES_COUNT) {
+            input_thread_count = NODES_COUNT;
+        }
+
+        thread_count_per_node = input_thread_count / NODES_COUNT;
     }
 
     if (dhl_name == "") {
@@ -665,7 +669,7 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    std::cout << "DHL: " << dhl_name << ", extension: " << file_extension << ", thread count: " << thread_count << std::endl;
+    std::cout << "DHL: " << dhl_name << ", extension: " << file_extension << ", thread count: " << thread_count_per_node << std::endl;
 
     auto start = std::chrono::steady_clock::now();
 
@@ -691,9 +695,9 @@ int main(int argc, char** argv) {
     std::vector<std::thread> threads;
 
     for (auto file_paths : file_paths_all_nodes) {
-        auto vec_with_thread_count = split_vector(file_paths, thread_count);
+        auto vec_with_thread_count = split_vector(file_paths, thread_count_per_node);
 
-        std::cout << "This nodes will have thread count " << vec_with_thread_count.size() << std::endl;
+        std::cout << "This node will have thread count = " << vec_with_thread_count.size() << std::endl;
 
         for (auto files : vec_with_thread_count) {
             //std::cout << "Creating a thread to process files...." << std::endl;
