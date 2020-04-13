@@ -21,7 +21,7 @@ steps:
 - script: mkdir cpp/parquet_release
   displayName: 'Create the compilation output folder parquet_release under cpp folder'  
 # CMake
-#- task: CMake@1
-#  inputs:
-#    workingDirectory: 'cpp/parquet_release'
-#    cmakeArgs: -DARROW_PARQUET=ON -DARROW_OPTIONAL_INSTALL=ON -DPARQUET_BUILD_EXAMPLES=ON -DARROW_BUILD_EXAMPLES=ON -DPARQUET_REQUIRE_ENCRYPTION=ON -DARROW_WITH_SNAPPY=ON
+- task: CMake@1
+  inputs:
+    workingDirectory: 'cpp/parquet_release'
+    cmakeArgs: -DARROW_PARQUET=ON -DARROW_OPTIONAL_INSTALL=ON -DPARQUET_BUILD_EXAMPLES=ON -DARROW_BUILD_EXAMPLES=ON -DPARQUET_REQUIRE_ENCRYPTION=ON -DARROW_WITH_SNAPPY=ON
