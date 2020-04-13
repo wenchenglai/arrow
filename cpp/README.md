@@ -45,6 +45,14 @@ run the app:
 
 Test data is located at arrow/data folder, there are multiple parquet files.
 
+## possible compilation error
+
+You must have libssl installed to have cryptograpic feature enabled
+
+`sudo apt-get install libssl-dev`
+
+If there are missing so file, you can simply copy them from the installation folder on development machine and store it in the same deployment folder as the executable.
+
 ## Test on ViX
 
 Copy the binary to vi3-0009 user/release folder

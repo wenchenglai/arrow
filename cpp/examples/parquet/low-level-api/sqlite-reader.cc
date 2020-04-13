@@ -623,19 +623,29 @@ int load_data_to_arrow(
 
     //std::cout << "Arrows Loaded " << table->num_rows() << " total rows in " << table->num_columns() << " columns." << std::endl;
 
-    return 0;
+    //int64_t aaa = table->num_rows();
+
+    return 1;
 }
 
-void process_each_node(std::vector<std::string> const &file_paths, std::unordered_map<std::string, std::string> const &source_schema_map) {
+void process_each_data_batch(std::vector<std::string> const &file_paths, std::unordered_map<std::string, std::string> const &source_schema_map) {
     std::vector<std::shared_ptr<arrow::Table>> tables;
+    int sum_num_rows_per_thread = 0;
 
     for (auto file_path : file_paths) {
         std::shared_ptr<arrow::Table> table;
         load_data_to_arrow(file_path, source_schema_map, &table);
+
+        sum_num_rows_per_thread += table->num_rows();
         //tables.push_back(table);
+
+//        if (tables.size() >= 100) {
+//            break;
+//        }
         // break;
     }
 
+    std::cout << "Total rows in memory for this treahd:  " << sum_num_rows_per_thread << std::endl;
     //arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
     //std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
     //std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", columns size = " << result_table->num_columns() << std::endl;
@@ -700,9 +710,8 @@ int main(int argc, char** argv) {
         std::cout << "This node will have thread count = " << vec_with_thread_count.size() << std::endl;
 
         for (auto files : vec_with_thread_count) {
-            //std::cout << "Creating a thread to process files...." << std::endl;
-            std::cout << "This files has files count " << files.size() << std::endl;
-            threads.push_back(std::thread(process_each_node, files, source_schema_map));
+            std::cout << "This thread has files count " << files.size() << std::endl;
+            threads.push_back(std::thread(process_each_data_batch, files, source_schema_map));
             // break;
         }
         //break;
