@@ -35,3 +35,14 @@ steps:
     cd cpp/parquet_release/release
     ls
   displayName: 'Show output folder content'
+
+- task: CopyFiles@2
+  inputs:
+    sourceFolder: '$(Build.SourcesDirectory)'
+    contents: '/cpp/parquet_release/release/sqlite-reader'
+    targetFolder: '$(Build.ArtifactStagingDirectory)'
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathToPublish: '$(Build.ArtifactStagingDirectory)'
+    artifactName: sqlite-reader-exe
