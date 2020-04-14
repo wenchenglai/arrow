@@ -30,20 +30,6 @@ steps:
     make
   displayName: 'Make executables'
 
-- script: |
-    pwd
-    cd cpp/parquet_release/release
-    ls
-    echo '$(Build.SourcesDirectory)'
-    echo $(Build.SourcesDirectory)    
-    echo '$(Build.ArtifactStagingDirectory)'
-    echo $(Build.ArtifactStagingDirectory)    
-    echo '$(System.DefaultWorkingDirectory)'
-    echo $(System.DefaultWorkingDirectory)    
-    echo '$(BuildConfiguration)'
-    echo $(BuildConfiguration)    
-  displayName: 'Show output folder content'
-
 - task: CopyFiles@2
   inputs:
     sourceFolder: '$(Build.SourcesDirectory)'
@@ -54,3 +40,35 @@ steps:
   inputs:
     pathToPublish: '$(Build.ArtifactStagingDirectory)'
     artifactName: sqlite-reader-exe
+
+- task: UniversalPackages@0
+  displayName: Universal Publish
+  inputs:
+    command: publish
+    publishDirectory: '$(Build.ArtifactStagingDirectory)'
+    vstsFeedPublish: 'cpp'
+    vstsFeedPackagePublish: 'sqlite-reader'
+    packagePublishDescription: 'SQLite Reader Package'   
+
+- script: |
+    echo 'pwd'
+    pwd
+    echo 'cd cpp/parquet_release/release'
+    cd cpp/parquet_release/release
+    echo 'ls all content of current folder'
+    ls
+    echo 'variable System.DefaultWorkingDirectory'
+    echo $(System.DefaultWorkingDirectory)      
+    echo 'variable Build.SourcesDirectory'
+    echo $(Build.SourcesDirectory)    
+    echo 'variable Build.ArtifactStagingDirectory'
+    echo $(Build.ArtifactStagingDirectory)      
+    echo 'variable BuildConfiguration'
+    echo $(BuildConfiguration)
+
+    echo 'show content of staging directory'
+    echo cd $(Build.ArtifactStagingDirectory)
+    echo ls
+
+
+  displayName: 'Show output folder content'     
