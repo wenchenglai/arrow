@@ -31,6 +31,7 @@ steps:
   displayName: 'Make executables'
 
 - script: |
-    cd release
+    pwd
+    cd cpp/parquet_release/release
     ls
   displayName: 'Show output folder content'
