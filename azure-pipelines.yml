@@ -14,8 +14,7 @@ steps:
   displayName: 'Show current path'
 
 - script: |
-    echo Add other tasks to build, test, and deploy your project.
-    echo See https://aka.ms/yaml
+    ls 
   displayName: 'Run a multi-line script'
 
 - script: mkdir cpp/parquet_release
