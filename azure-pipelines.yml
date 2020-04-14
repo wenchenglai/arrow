@@ -45,10 +45,10 @@ steps:
   displayName: Universal Publish
   inputs:
     command: publish
-    publishDirectory: '$(Build.ArtifactStagingDirectory)'
+    publishDirectory: '$(Build.ArtifactStagingDirectory)/cpp/parquet_release/release'
     vstsFeedPublish: 'cpp'
     vstsFeedPackagePublish: 'sqlite-reader'
-    packagePublishDescription: 'SQLite Reader Package'   
+    packagePublishDescription: 'SQLite-Reader-Package'   
 
 - script: |
     echo 'pwd'
@@ -68,7 +68,8 @@ steps:
 
     echo 'show content of staging directory'
     echo cd $(Build.ArtifactStagingDirectory)
+    cd $(Build.ArtifactStagingDirectory)
     echo ls
-
+    ls
 
   displayName: 'Show output folder content'     
