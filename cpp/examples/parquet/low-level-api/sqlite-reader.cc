@@ -628,7 +628,7 @@ int load_data_to_arrow(
     return 1;
 }
 
-void process_each_data_batch(std::vector<std::string> const &file_paths, std::unordered_map<std::string, std::string> const &source_schema_map) {
+int process_each_data_batch(std::vector<std::string> const &file_paths, std::unordered_map<std::string, std::string> const &source_schema_map) {
     std::vector<std::shared_ptr<arrow::Table>> tables;
     int sum_num_rows_per_thread = 0;
 
@@ -644,8 +644,9 @@ void process_each_data_batch(std::vector<std::string> const &file_paths, std::un
 //        }
         // break;
     }
+    return sum_num_rows_per_thread;
+    //std::cout << "Total rows in memory for this thread:  " << sum_num_rows_per_thread << std::endl;
 
-    std::cout << "Total rows in memory for this treahd:  " << sum_num_rows_per_thread << std::endl;
     //arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
     //std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
     //std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", columns size = " << result_table->num_columns() << std::endl;
@@ -701,8 +702,7 @@ int main(int argc, char** argv) {
     get_schema(file_paths_all_nodes.front().front(), source_schema_map);
     //print_schema(source_schema_map);
 
-    // thread list to join later
-    std::vector<std::thread> threads;
+    std::vector<std::future<int>> futures;
 
     for (auto file_paths : file_paths_all_nodes) {
         auto vec_with_thread_count = split_vector(file_paths, thread_count_per_node);
@@ -710,19 +710,42 @@ int main(int argc, char** argv) {
         std::cout << "This node will have thread count = " << vec_with_thread_count.size() << std::endl;
 
         for (auto files : vec_with_thread_count) {
-            std::cout << "This thread has files count " << files.size() << std::endl;
-            threads.push_back(std::thread(process_each_data_batch, files, source_schema_map));
-            // break;
+            std::future<int> future = std::async(std::launch::async, process_each_data_batch, files, source_schema_map);
+            futures.push_back(std::move(future));
         }
-        //break;
     }
 
     std::cout << "All threads have been started...." << std::endl;
 
-    for (auto& th : threads) {
-        th.join();
+    int total_row_count = 0;
+    for (auto&& future : futures) {
+        int count_per_thread = future.get();
+        total_row_count += count_per_thread;
     }
-    std::cout << "All threads finished their work." << std::endl;
+
+    std::cout << "All threads finished their work.  The total row count is " << total_row_count << std::endl;
+//    // thread list to join later
+//    std::vector<std::thread> threads;
+//
+//    for (auto file_paths : file_paths_all_nodes) {
+//        auto vec_with_thread_count = split_vector(file_paths, thread_count_per_node);
+//
+//        std::cout << "This node will have thread count = " << vec_with_thread_count.size() << std::endl;
+//
+//        for (auto files : vec_with_thread_count) {
+//            std::cout << "This thread has files count " << files.size() << std::endl;
+//            threads.push_back(std::thread(process_each_data_batch, files, source_schema_map));
+//            // break;
+//        }
+//        //break;
+//    }
+//
+//    std::cout << "All threads have been started...." << std::endl;
+//
+//    for (auto& th : threads) {
+//        th.join();
+//    }
+//    std::cout << "All threads finished their work." << std::endl;
 
     auto end = std::chrono::steady_clock::now();
     elapsed_seconds = end - start;
