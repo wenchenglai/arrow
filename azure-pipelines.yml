@@ -9,13 +9,11 @@ trigger:
 pool:
   vmImage: 'ubuntu-latest'
 
-steps:
-- script: pwd
-  displayName: 'Show current path'
 
 - script: |
+    pwd
     ls 
-  displayName: 'Run a multi-line script'
+  displayName: 'Show current contents'
 
 - script: mkdir cpp/parquet_release
   displayName: 'Create the compilation output folder parquet_release under cpp folder'  
@@ -25,3 +23,11 @@ steps:
   inputs:
     workingDirectory: 'cpp/parquet_release'
     cmakeArgs: -DARROW_PARQUET=ON -DARROW_OPTIONAL_INSTALL=ON -DPARQUET_BUILD_EXAMPLES=ON -DARROW_BUILD_EXAMPLES=ON -DPARQUET_REQUIRE_ENCRYPTION=ON -DARROW_WITH_SNAPPY=ON ..
+
+- script: make
+  displayName: 'Make executables'
+
+- script: |
+    cd release
+    ls
+  displayName: 'Show output folder content'
