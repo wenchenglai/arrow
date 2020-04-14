@@ -46,7 +46,7 @@ steps:
   inputs:
     command: publish
     publishDirectory: '$(Build.ArtifactStagingDirectory)/cpp/parquet_release/release'
-    vstsFeedPublish: 'cpp'
+    vstsFeedPublish: 'Hennessey/cpp'
     vstsFeedPackagePublish: 'sqlite-reader'
     packagePublishDescription: 'SQLite-Reader-Package'   
 
