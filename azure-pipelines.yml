@@ -34,12 +34,20 @@ steps:
     pwd
     cd cpp/parquet_release/release
     ls
+    echo '$(Build.SourcesDirectory)'
+    echo $(Build.SourcesDirectory)    
+    echo '$(Build.ArtifactStagingDirectory)'
+    echo $(Build.ArtifactStagingDirectory)    
+    echo '$(System.DefaultWorkingDirectory)'
+    echo $(System.DefaultWorkingDirectory)    
+    echo '$(BuildConfiguration)'
+    echo $(BuildConfiguration)    
   displayName: 'Show output folder content'
 
 - task: CopyFiles@2
   inputs:
     sourceFolder: '$(Build.SourcesDirectory)'
-    contents: '/cpp/parquet_release/release/sqlite-reader'
+    contents: '$(System.DefaultWorkingDirectory)/cpp/parquet_release/release/sqlite-reader'
     targetFolder: '$(Build.ArtifactStagingDirectory)'
 
 - task: PublishBuildArtifacts@1
