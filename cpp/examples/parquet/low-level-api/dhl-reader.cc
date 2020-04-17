@@ -22,6 +22,7 @@
 #include <iostream>
 #include <memory>
 #include <thread>
+#include <future>
 
 #include "reader_writer.h"
 #include <arrow/api.h>
@@ -110,47 +111,30 @@ void print_metadata(std::shared_ptr<parquet::FileMetaData> file_metadata) {
     std::cout << "Has Encryption? = " << is_encrypted << std::endl;
 }
 
-std::shared_ptr<arrow::Table> read_whole_file(std::string file_path) {
+std::shared_ptr<arrow::Table> read_parquet_file_into_arrow_table(std::string file_path) {
     std::shared_ptr<arrow::io::ReadableFile> infile;
-    PARQUET_ASSIGN_OR_THROW(
-            infile,
-            arrow::io::ReadableFile::Open(file_path,
-                                          arrow::default_memory_pool()));
+    PARQUET_ASSIGN_OR_THROW(infile,arrow::io::ReadableFile::Open(file_path, arrow::default_memory_pool()));
 
     std::unique_ptr<parquet::arrow::FileReader> reader;
-    PARQUET_THROW_NOT_OK(
-            parquet::arrow::OpenFile(infile, arrow::default_memory_pool(), &reader));
+    PARQUET_THROW_NOT_OK(parquet::arrow::OpenFile(infile, arrow::default_memory_pool(), &reader));
+
     std::shared_ptr<arrow::Table> table;
     PARQUET_THROW_NOT_OK(reader->ReadTable(&table));
 
     return table;
 }
 
-void read_whole_file_thread(std::string file_path) {
-    std::shared_ptr<arrow::io::ReadableFile> infile;
-    PARQUET_ASSIGN_OR_THROW(
-            infile,
-            arrow::io::ReadableFile::Open(file_path,
-                                          arrow::default_memory_pool()));
-
-    std::unique_ptr<parquet::arrow::FileReader> reader;
-    PARQUET_THROW_NOT_OK(
-            parquet::arrow::OpenFile(infile, arrow::default_memory_pool(), &reader));
-    std::shared_ptr<arrow::Table> table;
-    PARQUET_THROW_NOT_OK(reader->ReadTable(&table));
-
-    std::cout << "Loaded " << table->num_rows() << " total rows in " << table->num_columns() << " columns." << std::endl;
-}
-
 int load_data_from_folder(std::string input_folder_path) {
     DIR *dir;
     struct dirent *ent;
+
     if ((dir = opendir (input_folder_path.c_str())) != NULL) {
-        //std::vector<std::shared_ptr<arrow::Table>> tables;
         int row_count = 0;
         int column_count = 0;
 
-        std::vector<std::thread> threads;
+        //std::vector<std::thread> threads;
+        std::vector<std::future<std::shared_ptr<arrow::Table>>> futures;
+
         /* print all the files and directories within directory */
         while ((ent = readdir (dir)) != NULL) {
             std::string file_name = ent->d_name;
@@ -161,10 +145,14 @@ int load_data_from_folder(std::string input_folder_path) {
 
                 // make sure file name ends with .parquet
                 if (file_name.substr(length - 8, length - 1) == ".parquet") {
-                    std::cout << file_name << std::endl;
+                    std::string full_file_path = input_folder_path + file_name;
+                    std::cout << "Reading parquet file: " << full_file_path << std::endl;
 
-                    threads.push_back(std::thread(read_whole_file_thread, input_folder_path + "/" + file_name));
-                    //std::shared_ptr<arrow::Table> new_table = read_whole_file(input_folder_path + "/" + file_name);
+                    std::future<std::shared_ptr<arrow::Table>> future = std::async(std::launch::async, read_parquet_file_into_arrow_table, full_file_path);
+                    futures.push_back(std::move(future));
+
+                    //threads.push_back(std::thread(read_whole_file_thread, input_folder_path + "/" + file_name));
+
                     //row_count += new_table->num_rows();
                     //column_count = new_table->num_columns();
 
@@ -174,14 +162,30 @@ int load_data_from_folder(std::string input_folder_path) {
         }
         closedir (dir);
 
-        for (auto& th : threads) th.join();
-        //arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
-        //std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
-        //std::cout << "Loaded " << result_table->num_rows() << " rows in " << result_table->num_columns() << " columns." << std::endl;
+        std::cout << "All threads have been started...." << std::endl;
+
+//        for (auto& th : threads) {
+//            th.join();
+//        }
+
+        std::vector<std::shared_ptr<arrow::Table>> tables;
+        for (auto&& future : futures) {
+            std::shared_ptr<arrow::Table> table = future.get();
+            tables.push_back(table);
+            std::cout << "This table loaded " << table->num_rows() << " total rows." << std::endl;
+        }
+
+        std::cout << "All thread are finished, let's combine them into one table." << std::endl;
+        auto start = std::chrono::steady_clock::now();
+
+        arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
+        std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
+
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> elapsed_seconds = end - start;
+        std::cout << "Combining all tables takes: " << elapsed_seconds.count() << ".  The table has " << result_table->num_rows() << " rows and " << result_table->num_columns() << " columns." << std::endl;
+
         //std::cout << "Loaded " << row_count << " total rows in " << column_count << " columns." << std::endl;
-
-        //delete result;
-
     } else {
         /* could not open directory */
         perror ("");
