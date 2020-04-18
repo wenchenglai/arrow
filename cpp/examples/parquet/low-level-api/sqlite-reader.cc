@@ -42,32 +42,16 @@
       return EXIT_FAILURE;                         \
     }                                              \
   } while (0);
-/*
- * This example describes writing and reading Parquet Files in C++ and serves as a
- * reference to the API.
- * The file contains all the physical data types supported by Parquet.
- * This example uses the RowGroupWriter API that supports writing RowGroups optimized for
- *memory consumption
- **/
 
-/* Parquet is a structured columnar file format
- * Parquet File = "Parquet data" + "Parquet Metadata"
- * "Parquet data" is simply a vector of RowGroups. Each RowGroup is a batch of rows in a
- * columnar layout
- * "Parquet Metadata" contains the "file schema" and attributes of the RowGroups and their
- * Columns
- * "file schema" is a tree where each node is either a primitive type (leaf nodes) or a
- * complex (nested) type (internal nodes)
- * For specific details, please refer the format here:
- * https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
- **/
+std::string get_query_columns(std::string);
+
+enum memory_target_type {Arrow, CppType} memory_target;
 
 //namespace fs = std::__fs::filesystem;
-
-//const char PARQUET_FILENAME[] = "dhl.parquet";
+const std::string QUERY_COLUMNS_FILE_NAME = "columns.txt";
 const std::string PARQUET = ".parquet";
 const int NODES_COUNT = 6;
-//const int APPROX_FILES_COUNT_PER_NODE = 2100;  // for performance reason, we initialize vector with this value
+std::string CANONICAL_QUERY_STRING = get_query_columns(QUERY_COLUMNS_FILE_NAME);
 
 class DhlRecord {
 public:
@@ -360,6 +344,24 @@ arrow::Status VectorToColumnarTable(const std::vector<DhlRecord>& rows,
     return arrow::Status::OK();
 }
 
+std::string get_query_columns(std::string file_name) {
+    std::ifstream in_file;
+
+    in_file.open(file_name);
+
+    if (!in_file) {
+        return "Select * FROM attribTable";
+    }
+
+    int size = 65535;
+    char columns[size];
+    in_file.getline(columns, size);
+
+    in_file.close();
+
+    return "SELECT " + std::string(columns) + " FROM attribTable";
+}
+
 int get_schema(std::string file_path, std::unordered_map<std::string, std::string>& source_schema_map) {
     sqlite3* pDb;
     int flags = (SQLITE_OPEN_READONLY);
@@ -400,7 +402,7 @@ int get_schema(std::string file_path, std::unordered_map<std::string, std::strin
         return 0;
     }
 
-    std::string query = "SELECT * FROM attribTable LIMIT 1;";
+    std::string query = CANONICAL_QUERY_STRING + " LIMIT 1;";
 
     sqlite3_stmt *stmt;
     bResult = sqlite3_prepare_v2(pDb, query.c_str(), -1, &stmt, NULL);
@@ -509,7 +511,7 @@ int load_data_to_arrow(
         return EXIT_FAILURE;
     }
 
-    std::string query = "SELECT * FROM attribTable;";
+    std::string query = CANONICAL_QUERY_STRING + ";";
 
     sqlite3_stmt *stmt;
     bResult = sqlite3_prepare_v2(pDb, query.c_str(), -1, &stmt, NULL);
@@ -628,34 +630,152 @@ int load_data_to_arrow(
     return 1;
 }
 
-int process_each_data_batch(std::vector<std::string> const &file_paths, std::unordered_map<std::string, std::string> const &source_schema_map) {
-    std::vector<std::shared_ptr<arrow::Table>> tables;
+int load_data_to_cpp_type(std::string file_path) {
+    sqlite3* pDb;
+    int flags = (SQLITE_OPEN_READONLY);
+    int bResult = sqlite3_open_v2(file_path.c_str(), &pDb, flags, NULL);
+
+    if (SQLITE_OK != bResult) {
+        sqlite3_close(pDb);
+        std::cerr << "Cannot Open DB: " << bResult << std::endl;
+
+        if (nullptr != pDb) {
+            std::string strMsg = sqlite3_errmsg(pDb);
+            sqlite3_close_v2(pDb);
+            pDb = nullptr;
+        } else {
+            std::cerr << "Unable to get DB handle" << std::endl;
+        }
+        return EXIT_FAILURE;
+    }
+
+    //std::string strKey = "sAr5w3Vk5l";
+    std::string strKey = "e9FkChw3xF";
+    bResult = sqlite3_key_v2(pDb, nullptr, strKey.c_str(), static_cast<int>(strKey.size()));
+
+    if (SQLITE_OK != bResult) {
+        sqlite3_close(pDb);
+        std::cerr << "Cannot key the DB: " << bResult << std::endl;
+
+        if (nullptr != pDb) {
+            std::string strMsg = sqlite3_errmsg(pDb);
+            sqlite3_close_v2(pDb);
+            pDb = nullptr;
+            std::cerr << "SQLite Error Message: " << strMsg << std::endl;
+        } else {
+            std::cerr << "Unable to key the database" << std::endl;
+        }
+
+        return EXIT_FAILURE;
+    }
+
+    std::string query = CANONICAL_QUERY_STRING + ";";
+
+    sqlite3_stmt *stmt;
+    bResult = sqlite3_prepare_v2(pDb, query.c_str(), -1, &stmt, NULL);
+
+    if (SQLITE_OK != bResult) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(pDb);
+        std::cerr << "Cannot prepare statement from DB: " << bResult << std::endl;
+
+        if (nullptr != pDb) {
+            std::string strMsg = sqlite3_errmsg(pDb);
+            sqlite3_close_v2(pDb);
+            pDb = nullptr;
+            std::cerr << "SQLite Error Message: " << strMsg << std::endl;
+        } else {
+            std::cerr << "Unable to prepare SQLite statement" << std::endl;
+        }
+
+        return EXIT_FAILURE;
+    }
+
+    int col_count = sqlite3_column_count(stmt);
+    int row_count = 0;
+
+    while ((bResult = sqlite3_step(stmt)) == SQLITE_ROW) {
+        for (int i = 0; i < col_count; i++) {
+            std::string col_name = sqlite3_column_name(stmt, i);
+            std::string col_type = sqlite3_column_decltype(stmt, i);
+            //std::cout << i << " col_name = " << col_name << ", col_type = " << col_type << std::endl;
+
+            if ("BIGINT" == col_type) {
+                int64_t result = sqlite3_column_int64(stmt, i);
+
+            } else if (("DOUBLE" == col_type || "FLOAT" == col_type)) {
+                double val = sqlite3_column_double(stmt, i);
+
+            } else if ("BLOB" == col_type) {
+                int blob_size = sqlite3_column_bytes(stmt, i);
+                if (blob_size > 0) {
+                    const uint8_t *pBuffer = reinterpret_cast<const uint8_t*>(sqlite3_column_blob(stmt, i));
+                    uint8_t buffer[blob_size];
+                    std::copy(pBuffer, pBuffer + blob_size, &buffer[0]);
+                }
+
+            } else if ("INTEGER" == col_type) {
+                int result = sqlite3_column_int(stmt, i);
+            }
+        }
+         row_count++;
+    }
+
+    if (bResult != SQLITE_DONE) {
+        std::cerr << "SELECT failed: " << sqlite3_errmsg(pDb) << ".  The result value is " << bResult << std::endl;
+        // if you return/throw here, don't forget the finalize
+    }
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(pDb);
+
+    return row_count;
+}
+
+int process_each_data_batch(
+        std::vector<std::string> const &file_paths,
+        std::unordered_map<std::string, std::string> const &source_schema_map,
+        memory_target_type memory_target) {
     int sum_num_rows_per_thread = 0;
 
-    for (auto file_path : file_paths) {
-        std::shared_ptr<arrow::Table> table;
-        load_data_to_arrow(file_path, source_schema_map, &table);
+    if (memory_target == Arrow) {
+        //std::cout << "Target memory is Arrow table." << std::endl;
+        std::vector<std::shared_ptr<arrow::Table>> tables;
 
-        sum_num_rows_per_thread += table->num_rows();
-        //tables.push_back(table);
+        for (auto file_path : file_paths) {
+            std::shared_ptr<arrow::Table> table;
+            load_data_to_arrow(file_path, source_schema_map, &table);
+
+            sum_num_rows_per_thread += table->num_rows();
+            //tables.push_back(table);
 
 //        if (tables.size() >= 100) {
 //            break;
 //        }
-        // break;
-    }
-    return sum_num_rows_per_thread;
-    //std::cout << "Total rows in memory for this thread:  " << sum_num_rows_per_thread << std::endl;
+            // break;
+        }
+        //std::cout << "Total rows in memory for this thread:  " << sum_num_rows_per_thread << std::endl;
 
-    //arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
-    //std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
-    //std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", columns size = " << result_table->num_columns() << std::endl;
+        //arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
+        //std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
+        //std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", columns size = " << result_table->num_columns() << std::endl;
+
+    } else if (memory_target == CppType) {
+        // we just load data into cpp type in memory
+        //std::cout << "Target memory is cpp standard types." << std::endl;
+        for (auto file_path : file_paths) {
+            sum_num_rows_per_thread += load_data_to_cpp_type(file_path);
+        }
+    }
+
+    return sum_num_rows_per_thread;
 }
 
 int main(int argc, char** argv) {
     std::string dhl_name = "";
     std::string file_extension = "patch";
     int thread_count_per_node = 1;
+    memory_target_type memory_target = Arrow;
 
     if (argc > 1) {
         dhl_name = argv[1];
@@ -675,12 +795,27 @@ int main(int argc, char** argv) {
         thread_count_per_node = input_thread_count / NODES_COUNT;
     }
 
+    if (argc > 4) {
+        std::string target = argv[4];
+
+        if ("cppType" == target) {
+            memory_target = CppType;
+        }
+    }
+
     if (dhl_name == "") {
         std::cout << "Please specify a DHL name" << std::endl;
         return EXIT_FAILURE;
     }
 
-    std::cout << "DHL: " << dhl_name << ", extension: " << file_extension << ", thread count: " << thread_count_per_node << std::endl;
+    std::cout << "DHL: " << dhl_name << ", extension: " << file_extension << ", thread count per node: " << thread_count_per_node << std::endl;
+
+    if (memory_target == CppType) {
+        std::cout << "Target memory is cpp standard types." << std::endl;
+    }
+
+    std::cout << "The first 200 characters of query string: " << CANONICAL_QUERY_STRING.substr(0, 200) << std::endl;
+
 
     auto start = std::chrono::steady_clock::now();
 
@@ -695,7 +830,6 @@ int main(int argc, char** argv) {
     for (auto file_paths: file_paths_all_nodes) {
         std::cout << "Files count per node = " << file_paths.size() << std::endl;
     }
-
     // create data source db schema, as it's needed for arrow table creation
     // it's better to get schema here, because every thread need the same schema object
     std::unordered_map<std::string, std::string> source_schema_map;
@@ -710,7 +844,7 @@ int main(int argc, char** argv) {
         std::cout << "This node will have thread count = " << vec_with_thread_count.size() << std::endl;
 
         for (auto files : vec_with_thread_count) {
-            std::future<int> future = std::async(std::launch::async, process_each_data_batch, files, source_schema_map);
+            std::future<int> future = std::async(std::launch::async, process_each_data_batch, files, source_schema_map, memory_target);
             futures.push_back(std::move(future));
         }
     }
