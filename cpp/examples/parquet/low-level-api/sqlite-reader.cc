@@ -31,8 +31,9 @@
 #include "arrow/testing/util.h"
 //#include <arrow/io/api.h>
 #include <parquet/arrow/reader.h>
-//#include <parquet/arrow/writer.h>
+#include <parquet/arrow/writer.h>
 
+using parquet::arrow::WriteTable;
 
 #define EXIT_ON_FAILURE(expr)                      \
   do {                                             \
@@ -53,19 +54,7 @@ const std::string PARQUET = ".parquet";
 const int NODES_COUNT = 6;
 std::string CANONICAL_QUERY_STRING = get_query_columns(QUERY_COLUMNS_FILE_NAME);
 
-class DhlRecord {
-public:
-    DhlRecord(int64_t defectKey$swathX, int64_t defectKey$swathY, int64_t defectKey$defectID) {
-        this->defectKey$swathX = defectKey$swathX;
-        this->defectKey$swathY = defectKey$swathY;
-        this->defectKey$defectID = defectKey$defectID;
-    }
-
-    int64_t defectKey$swathX;
-    int64_t defectKey$swathY;
-    int64_t defectKey$defectID;
-};
-
+// split a big vector into n smaller vectors
 template<typename T>
 std::vector<std::vector<T>> split_vector(const std::vector<T>& vec, size_t n)
 {
@@ -306,42 +295,6 @@ void print_schema(std::unordered_map<std::string, std::string> const &source_sch
     for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
         std::cout << i++ << ": " << itr->first << "  " << itr->second << std::endl;
     }
-}
-
-arrow::Status VectorToColumnarTable(const std::vector<DhlRecord>& rows,
-                                    std::shared_ptr<arrow::Table>* table) {
-
-    arrow::MemoryPool* pool = arrow::default_memory_pool();
-
-    arrow::Int64Builder x_builder(pool);
-    arrow::Int64Builder y_builder(pool);
-    arrow::Int64Builder id_builder(pool);
-
-    for (const DhlRecord& row : rows) {
-        ARROW_RETURN_NOT_OK(x_builder.Append(row.defectKey$swathX));
-        ARROW_RETURN_NOT_OK(y_builder.Append(row.defectKey$swathY));
-        ARROW_RETURN_NOT_OK(id_builder.Append(row.defectKey$defectID));
-    }
-
-    std::shared_ptr<arrow::Array> x_array;
-    ARROW_RETURN_NOT_OK(x_builder.Finish(&x_array));
-
-    std::shared_ptr<arrow::Array> y_array;
-    ARROW_RETURN_NOT_OK(y_builder.Finish(&y_array));
-
-    std::shared_ptr<arrow::Array> id_array;
-    ARROW_RETURN_NOT_OK(id_builder.Finish(&id_array));
-
-
-    std::vector<std::shared_ptr<arrow::Field>> schema_vector = {
-            arrow::field("defectKey$swathX", arrow::int64()), arrow::field("defectKey$swathY", arrow::int64()),
-            arrow::field("defectKey$defectID", arrow::int64())};
-
-    auto schema = std::make_shared<arrow::Schema>(schema_vector);
-
-    *table = arrow::Table::Make(schema, {x_array, y_array, id_array});
-
-    return arrow::Status::OK();
 }
 
 std::string get_query_columns(std::string file_name) {
@@ -732,10 +685,21 @@ int load_data_to_cpp_type(std::string file_path) {
     return row_count;
 }
 
+// #1 Write out the data as a Parquet file
+void write_parquet_file(const arrow::Table& table, int node_id) {
+    std::shared_ptr<arrow::io::FileOutputStream> outfile;
+    PARQUET_ASSIGN_OR_THROW(outfile,arrow::io::FileOutputStream::Open(std::to_string(node_id) + ".parquet"));
+
+    // The last argument to the function call is the size of the RowGroup in
+    // the parquet file. Normally you would choose this to be rather large but
+    // for the example, we use a small value to have multiple RowGroups.
+    PARQUET_THROW_NOT_OK(parquet::arrow::WriteTable(table, arrow::default_memory_pool(), outfile, 3));
+}
+
 int process_each_data_batch(
         std::vector<std::string> const &file_paths,
         std::unordered_map<std::string, std::string> const &source_schema_map,
-        memory_target_type memory_target) {
+        memory_target_type memory_target, int thread_id) {
     int sum_num_rows_per_thread = 0;
 
     if (memory_target == Arrow) {
@@ -747,18 +711,19 @@ int process_each_data_batch(
             load_data_to_arrow(file_path, source_schema_map, &table);
 
             sum_num_rows_per_thread += table->num_rows();
-            //tables.push_back(table);
+            tables.push_back(table);
 
-//        if (tables.size() >= 100) {
-//            break;
-//        }
-            // break;
+            if (tables.size() >= 100) {
+                break;
+            }
         }
         //std::cout << "Total rows in memory for this thread:  " << sum_num_rows_per_thread << std::endl;
 
-        //arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
-        //std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
-        //std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", columns size = " << result_table->num_columns() << std::endl;
+        arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
+        std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
+        std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", thread id = " << thread_id << std::endl;
+
+        write_parquet_file(*result_table, thread_id);
 
     } else if (memory_target == CppType) {
         // we just load data into cpp type in memory
@@ -838,13 +803,15 @@ int main(int argc, char** argv) {
 
     std::vector<std::future<int>> futures;
 
+    // file_pathes_all_nodes has NODES_COUNT file_paths.  Each file_paths has all the files on that node
+    int thread_id = 1;
     for (auto file_paths : file_paths_all_nodes) {
         auto vec_with_thread_count = split_vector(file_paths, thread_count_per_node);
 
         std::cout << "This node will have thread count = " << vec_with_thread_count.size() << std::endl;
 
         for (auto files : vec_with_thread_count) {
-            std::future<int> future = std::async(std::launch::async, process_each_data_batch, files, source_schema_map, memory_target);
+            std::future<int> future = std::async(std::launch::async, process_each_data_batch, files, source_schema_map, memory_target, thread_id++);
             futures.push_back(std::move(future));
         }
     }
