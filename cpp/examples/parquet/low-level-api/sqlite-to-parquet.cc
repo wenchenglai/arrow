@@ -1,20 +1,3 @@
-// Licensed to the Apache Software Foundation (ASF) under one
-// or more contributor license agreements. See the NOTICE file
-// distributed with this work for additional information
-// regarding copyright ownership. The ASF licenses this file
-// to you under the Apache License, Version 2.0 (the
-// "License"); you may not use this file except in compliance
-// with the License. You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing,
-// software distributed under the License is distributed on an
-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied. See the License for the
-// specific language governing permissions and limitations
-// under the License.
-
 #include <dirent.h>
 #include <cassert>
 #include <chrono>
@@ -33,7 +16,7 @@
 #include <parquet/arrow/reader.h>
 #include <parquet/arrow/writer.h>
 
-//using parquet::arrow::WriteTable;
+typedef std::shared_ptr<arrow::Table> table_ptr;
 
 #define EXIT_ON_FAILURE(expr)                      \
   do {                                             \
@@ -48,7 +31,6 @@ std::string get_query_columns(std::string);
 
 enum memory_target_type {Arrow, CppType} memory_target;
 
-//namespace fs = std::__fs::filesystem;
 const std::string QUERY_COLUMNS_FILE_NAME = "columns.txt";
 const std::string PARQUET = ".parquet";
 const int NODES_COUNT = 6;
@@ -76,6 +58,7 @@ std::vector<std::vector<T>> split_vector(const std::vector<T>& vec, size_t n)
     return outVec;
 }
 
+// print row group data
 void print_data(int64_t rows_read, int16_t definition_level, int16_t repetition_level, int64_t value, int64_t values_read, int i) {
     std::cout << "rows_read = " << rows_read << std::endl;
     std::cout << "values_read = " << values_read << std::endl;
@@ -85,6 +68,7 @@ void print_data(int64_t rows_read, int16_t definition_level, int16_t repetition_
     std::cout << "i = " << i << std::endl;
 }
 
+// print parquet file level schema
 void print_metadata(std::shared_ptr<parquet::FileMetaData> file_metadata) {
     // Get the number of RowGroups
     int num_row_groups = file_metadata->num_row_groups();
@@ -111,84 +95,7 @@ void print_metadata(std::shared_ptr<parquet::FileMetaData> file_metadata) {
     std::cout << "Has Encryption? = " << is_encrypted << std::endl;
 }
 
-std::shared_ptr<arrow::Table> read_whole_file(std::string file_path) {
-    std::shared_ptr<arrow::io::ReadableFile> infile;
-    PARQUET_ASSIGN_OR_THROW(
-            infile,
-            arrow::io::ReadableFile::Open(file_path,
-                                          arrow::default_memory_pool()));
-
-    std::unique_ptr<parquet::arrow::FileReader> reader;
-    PARQUET_THROW_NOT_OK(
-            parquet::arrow::OpenFile(infile, arrow::default_memory_pool(), &reader));
-    std::shared_ptr<arrow::Table> table;
-    PARQUET_THROW_NOT_OK(reader->ReadTable(&table));
-
-    return table;
-}
-
-void read_whole_file_thread(std::string file_path) {
-    std::shared_ptr<arrow::io::ReadableFile> infile;
-    PARQUET_ASSIGN_OR_THROW(
-            infile,
-            arrow::io::ReadableFile::Open(file_path,
-                                          arrow::default_memory_pool()));
-
-    std::unique_ptr<parquet::arrow::FileReader> reader;
-    PARQUET_THROW_NOT_OK(
-            parquet::arrow::OpenFile(infile, arrow::default_memory_pool(), &reader));
-    std::shared_ptr<arrow::Table> table;
-    PARQUET_THROW_NOT_OK(reader->ReadTable(&table));
-
-    std::cout << "Loaded " << table->num_rows() << " total rows in " << table->num_columns() << " columns." << std::endl;
-}
-
-int load_data_from_folder(std::string input_folder_path) {
-    DIR *dir;
-    struct dirent *ent;
-    if ((dir = opendir (input_folder_path.c_str())) != NULL) {
-        //std::vector<std::shared_ptr<arrow::Table>> tables;
-
-        std::vector<std::thread> threads;
-        /* print all the files and directories within directory */
-        while ((ent = readdir (dir)) != NULL) {
-            std::string file_name = ent->d_name;
-
-            // get rid of . folder and other non-parquet files
-            if (file_name.find(PARQUET) != std::string::npos) {
-                int length = file_name.length();
-
-                // make sure file name ends with .parquet
-                if (file_name.substr(length - 8, length - 1) == ".parquet") {
-                    std::cout << file_name << std::endl;
-
-                    threads.push_back(std::thread(read_whole_file_thread, input_folder_path + "/" + file_name));
-                    //std::shared_ptr<arrow::Table> new_table = read_whole_file(input_folder_path + "/" + file_name);
-                    //row_count += new_table->num_rows();
-                    //column_count = new_table->num_columns();
-
-                    //tables.push_back(new_table);
-                }
-            }
-        }
-        closedir (dir);
-
-        for (auto& th : threads) th.join();
-        //arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
-        //std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
-        //std::cout << "Loaded " << result_table->num_rows() << " rows in " << result_table->num_columns() << " columns." << std::endl;
-        //std::cout << "Loaded " << row_count << " total rows in " << column_count << " columns." << std::endl;
-
-        //delete result;
-
-    } else {
-        /* could not open directory */
-        perror ("");
-        return EXIT_FAILURE;
-    }
-    return 0;
-}
-
+// break down a string using delimiter delim.
 void tokenize(std::string const &str, const char delim, std::vector<std::string> &out)
 {
     size_t start;
@@ -293,6 +200,7 @@ int get_all_files_path(std::string dhl_name, std::string file_extension, std::ve
     return EXIT_SUCCESS;
 }
 
+// print SQLite Data Source Schema
 void print_schema(std::unordered_map<std::string, std::string> const &source_schema_map) {
     std::cout << "******** Schema ******** = " << std::endl;
     int i = 1;
@@ -301,6 +209,7 @@ void print_schema(std::unordered_map<std::string, std::string> const &source_sch
     }
 }
 
+// Read the columns that we need to use from a file on disk
 std::string get_query_columns(std::string file_name) {
     std::ifstream in_file;
 
@@ -319,6 +228,8 @@ std::string get_query_columns(std::string file_name) {
     return "SELECT " + std::string(columns) + " FROM attribTable";
 }
 
+// This function will get the SQLite data source schema.  We need to load this dynamically to create destination type,
+// which is typically an Arrow table.
 int get_schema(std::string file_path, std::unordered_map<std::string, std::string>& source_schema_map) {
     sqlite3* pDb;
     int flags = (SQLITE_OPEN_READONLY);
@@ -500,13 +411,13 @@ int load_data_to_arrow(
 
             if ("BIGINT" == col_type && int64_builder_map.find(col_name) != int64_builder_map.end()) {
                 std::shared_ptr<arrow::Int64Builder> builder = int64_builder_map[col_name];
-                builder->Append(sqlite3_column_int64(stmt, i));
+                PARQUET_THROW_NOT_OK(builder->Append(sqlite3_column_int64(stmt, i)));
 
             } else if (("DOUBLE" == col_type || "FLOAT" == col_type)
                        && double_builder_map.find(col_name) != double_builder_map.end()) {
                 std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
                 double val = sqlite3_column_double(stmt, i);
-                builder->Append(val);
+                PARQUET_THROW_NOT_OK(builder->Append(val));
 
             } else if ("BLOB" == col_type && binary_builder_map.find(col_name) != binary_builder_map.end()) {
                 int blob_size = sqlite3_column_bytes(stmt, i);
@@ -516,11 +427,11 @@ int load_data_to_arrow(
                     //std::copy(pBuffer, pBuffer + blob_size, &buffer[0]);
 
                     std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
-                    builder->Append(pBuffer, blob_size);
+                    PARQUET_THROW_NOT_OK(builder->Append(pBuffer, blob_size));
                 }
             } else if ("INTEGER" == col_type && int_builder_map.find(col_name) != int_builder_map.end()) {
                 std::shared_ptr<arrow::Int32Builder> builder = int_builder_map[col_name];
-                builder->Append(sqlite3_column_int(stmt, i));
+                PARQUET_THROW_NOT_OK(builder->Append(sqlite3_column_int(stmt, i)));
             }
         }
         //break;
@@ -533,10 +444,6 @@ int load_data_to_arrow(
 
     sqlite3_finalize(stmt);
     sqlite3_close(pDb);
-
-//    for (auto itr = int64_builder_map.begin(); itr != int64_builder_map.end(); itr++) {
-//        std::cout << "For column: " << itr->first << ", we have " << int64_builder_map[itr->first]->length() << std::endl;
-//    }
 
     // Two tasks are accomplished in here:
     // 1. create arrow array for each column.  The whole arrays object will be used to create an Arrow Table
@@ -552,26 +459,26 @@ int load_data_to_arrow(
             schema_vector.emplace_back(arrow::field(col_name, arrow::int64()));
 
             std::shared_ptr<arrow::Int64Builder> builder = int64_builder_map[col_name];
-            builder->Finish(&array);
+            PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
         } else if (("DOUBLE" == col_type || "FLOAT" == col_type)
                    && double_builder_map.find(col_name) != double_builder_map.end()) {
             schema_vector.emplace_back(arrow::field(col_name, arrow::float64()));
 
             std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
-            builder->Finish(&array);
+            PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
         } else if ("BLOB" == col_type && binary_builder_map.find(col_name) != binary_builder_map.end()) {
             schema_vector.emplace_back(arrow::field(col_name, arrow::binary()));
 
             std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
-            builder->Finish(&array);
+            PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
         } else if ("INTEGER" == col_type && int_builder_map.find(col_name) != int_builder_map.end()) {
             schema_vector.emplace_back(arrow::field(col_name, arrow::int32()));
 
             std::shared_ptr<arrow::Int32Builder> builder = int_builder_map[col_name];
-            builder->Finish(&array);
+            PARQUET_THROW_NOT_OK(builder->Finish(&array));
         }
 
         arrays.emplace_back(array);
@@ -581,8 +488,6 @@ int load_data_to_arrow(
     *table = arrow::Table::Make(schema, arrays);
 
     //std::cout << "Arrows Loaded " << table->num_rows() << " total rows in " << table->num_columns() << " columns." << std::endl;
-
-    //int64_t aaa = table->num_rows();
 
     return 1;
 }
@@ -689,7 +594,7 @@ int load_data_to_cpp_type(std::string file_path) {
     return row_count;
 }
 
-// #1 Write out the data as a Parquet file
+// Write out the data as a Parquet file.  It'll also encrypt the output file.
 void write_parquet_file(const arrow::Table& table, int node_id) {
     std::shared_ptr<arrow::io::FileOutputStream> outfile;
     PARQUET_ASSIGN_OR_THROW(outfile,arrow::io::FileOutputStream::Open(std::to_string(node_id) + ".parquet"));
@@ -726,12 +631,12 @@ int process_each_data_batch(
     int sum_num_rows_per_thread = 0;
 
     if (memory_target == Arrow) {
-        std::vector<std::shared_ptr<arrow::Table>> tables;
+        std::vector<table_ptr> tables;
         tables.reserve(2100);
         int table_count = 0;
 
         for (auto file_path : file_paths) {
-            std::shared_ptr<arrow::Table> table;
+            table_ptr table;
             load_data_to_arrow(file_path, source_schema_map, &table);
 
             int current_rows = table->num_rows();
@@ -740,8 +645,6 @@ int process_each_data_batch(
 
             if (current_rows <= 0) {
                 std::cout << "**** File has zero records: " << file_path << std::endl;
-            } else {
-
             }
 
             sum_num_rows_per_thread += current_rows;
@@ -864,28 +767,6 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "All threads finished their work.  The total row count is " << total_row_count << std::endl;
-//    // thread list to join later
-//    std::vector<std::thread> threads;
-//
-//    for (auto file_paths : file_paths_all_nodes) {
-//        auto vec_with_thread_count = split_vector(file_paths, thread_count_per_node);
-//
-//        std::cout << "This node will have thread count = " << vec_with_thread_count.size() << std::endl;
-//
-//        for (auto files : vec_with_thread_count) {
-//            std::cout << "This thread has files count " << files.size() << std::endl;
-//            threads.push_back(std::thread(process_each_data_batch, files, source_schema_map));
-//            // break;
-//        }
-//        //break;
-//    }
-//
-//    std::cout << "All threads have been started...." << std::endl;
-//
-//    for (auto& th : threads) {
-//        th.join();
-//    }
-//    std::cout << "All threads finished their work." << std::endl;
 
     auto end = std::chrono::steady_clock::now();
     elapsed_seconds = end - start;
