@@ -217,7 +217,10 @@ std::vector<std::string> get_all_files_path_per_node(std::string dhl_name, std::
     std::vector<std::string> file_paths;
 
     std::string worker_node_path = "R" + std::to_string(node_index) + "C0S/";
+
     std::string dhl_path = DHL_ROOT_PATH + worker_node_path + dhl_name;
+
+    dhl_path = "/Volumes/remoteStorage/" + dhl_name;
 
     std::cout << "Top Level Path = " << dhl_path << std::endl;
 
@@ -279,6 +282,7 @@ int get_all_files_path(std::string dhl_name, std::string file_extension, std::ve
     for (int i = 0; i < NODES_COUNT; i++) {
         std::future<std::vector<std::string>> future = std::async(std::launch::async, get_all_files_path_per_node, dhl_name, file_extension, i);
         futures.push_back(std::move(future));
+        break;
     }
 
     for (auto&& future : futures) {
@@ -499,7 +503,7 @@ int load_data_to_arrow(
                 builder->Append(sqlite3_column_int64(stmt, i));
 
             } else if (("DOUBLE" == col_type || "FLOAT" == col_type)
-            && double_builder_map.find(col_name) != double_builder_map.end()) {
+                       && double_builder_map.find(col_name) != double_builder_map.end()) {
                 std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
                 double val = sqlite3_column_double(stmt, i);
                 builder->Append(val);
@@ -671,7 +675,7 @@ int load_data_to_cpp_type(std::string file_path) {
                 int result = sqlite3_column_int(stmt, i);
             }
         }
-         row_count++;
+        row_count++;
     }
 
     if (bResult != SQLITE_DONE) {
