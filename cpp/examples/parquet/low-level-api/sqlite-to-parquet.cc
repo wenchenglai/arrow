@@ -726,27 +726,43 @@ int process_each_data_batch(
     int sum_num_rows_per_thread = 0;
 
     if (memory_target == Arrow) {
-        //std::cout << "Target memory is Arrow table." << std::endl;
         std::vector<std::shared_ptr<arrow::Table>> tables;
+        tables.reserve(2100);
+        int table_count = 0;
 
         for (auto file_path : file_paths) {
             std::shared_ptr<arrow::Table> table;
             load_data_to_arrow(file_path, source_schema_map, &table);
 
-            sum_num_rows_per_thread += table->num_rows();
-            tables.push_back(table);
+            int current_rows = table->num_rows();
 
-            if (tables.size() >= 100) {
-                break;
+            table_count += 1;
+
+            if (current_rows <= 0) {
+                std::cout << "**** File has zero records: " << file_path << std::endl;
+            } else {
+
             }
+
+            sum_num_rows_per_thread += current_rows;
+
+            std::cout << "IN LOOP: Before push_back, we have total rows:" << sum_num_rows_per_thread << ", table_count = " << table_count << ", current rows = " << current_rows << std::endl;
+
+            if (tables.size() < 412) {
+                tables.push_back(table);
+                std::cout << "IN LOOP: Vector size = " << tables.size() <<", capacity = " << tables.capacity() << std::endl;
+            } else {
+                std::cout << "IN LOOP: We didn't push_back for table # : " << table_count << std::endl;
+            }
+
         }
         //std::cout << "Total rows in memory for this thread:  " << sum_num_rows_per_thread << std::endl;
 
-        arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
-        std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
-        std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", thread id = " << thread_id << std::endl;
+        //arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
+        //std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
+        //std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", thread id = " << thread_id << std::endl;
 
-        write_parquet_file(*result_table, thread_id);
+        //write_parquet_file(*result_table, thread_id);
 
     } else if (memory_target == CppType) {
         // we just load data into cpp type in memory
