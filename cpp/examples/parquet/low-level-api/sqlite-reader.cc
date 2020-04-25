@@ -20,7 +20,10 @@
 
 #include "sqlite3.h"
 
-//using parquet::arrow::WriteTable;
+typedef std::shared_ptr<arrow::Table> table_ptr;
+typedef std::string string;
+typedef std::unordered_map<std::string, std::string> string_map;
+typedef std::vector<std::string> string_vec;
 
 #define EXIT_ON_FAILURE(expr)                      \
   do {                                             \
@@ -477,19 +480,19 @@ int load_data_to_arrow(
 
     while ((bResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         for (int i = 0; i < col_count; i++) {
-            std::string col_name = sqlite3_column_name(stmt, i);
-            std::string col_type = sqlite3_column_decltype(stmt, i);
+            string col_name = sqlite3_column_name(stmt, i);
+            string col_type = sqlite3_column_decltype(stmt, i);
             //std::cout << i << " col_name = " << col_name << ", col_type = " << col_type << std::endl;
 
             if ("BIGINT" == col_type && int64_builder_map.find(col_name) != int64_builder_map.end()) {
                 std::shared_ptr<arrow::Int64Builder> builder = int64_builder_map[col_name];
-                builder->Append(sqlite3_column_int64(stmt, i));
+                PARQUET_THROW_NOT_OK(builder->Append(sqlite3_column_int64(stmt, i)));
 
             } else if (("DOUBLE" == col_type || "FLOAT" == col_type)
-            && double_builder_map.find(col_name) != double_builder_map.end()) {
+                       && double_builder_map.find(col_name) != double_builder_map.end()) {
                 std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
                 double val = sqlite3_column_double(stmt, i);
-                builder->Append(val);
+                PARQUET_THROW_NOT_OK(builder->Append(val));
 
             } else if ("BLOB" == col_type && binary_builder_map.find(col_name) != binary_builder_map.end()) {
                 int blob_size = sqlite3_column_bytes(stmt, i);
@@ -499,11 +502,11 @@ int load_data_to_arrow(
                     //std::copy(pBuffer, pBuffer + blob_size, &buffer[0]);
 
                     std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
-                    builder->Append(pBuffer, blob_size);
+                    PARQUET_THROW_NOT_OK(builder->Append(pBuffer, blob_size));
                 }
             } else if ("INTEGER" == col_type && int_builder_map.find(col_name) != int_builder_map.end()) {
                 std::shared_ptr<arrow::Int32Builder> builder = int_builder_map[col_name];
-                builder->Append(sqlite3_column_int(stmt, i));
+                PARQUET_THROW_NOT_OK(builder->Append(sqlite3_column_int(stmt, i)));
             }
         }
         //break;
@@ -535,26 +538,26 @@ int load_data_to_arrow(
             schema_vector.emplace_back(arrow::field(col_name, arrow::int64()));
 
             std::shared_ptr<arrow::Int64Builder> builder = int64_builder_map[col_name];
-            builder->Finish(&array);
+            PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
         } else if (("DOUBLE" == col_type || "FLOAT" == col_type)
                    && double_builder_map.find(col_name) != double_builder_map.end()) {
             schema_vector.emplace_back(arrow::field(col_name, arrow::float64()));
 
             std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
-            builder->Finish(&array);
+            PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
         } else if ("BLOB" == col_type && binary_builder_map.find(col_name) != binary_builder_map.end()) {
             schema_vector.emplace_back(arrow::field(col_name, arrow::binary()));
 
             std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
-            builder->Finish(&array);
+            PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
         } else if ("INTEGER" == col_type && int_builder_map.find(col_name) != int_builder_map.end()) {
             schema_vector.emplace_back(arrow::field(col_name, arrow::int32()));
 
             std::shared_ptr<arrow::Int32Builder> builder = int_builder_map[col_name];
-            builder->Finish(&array);
+            PARQUET_THROW_NOT_OK(builder->Finish(&array));
         }
 
         arrays.emplace_back(array);
@@ -642,9 +645,11 @@ int load_data_to_cpp_type(std::string file_path) {
 
             if ("BIGINT" == col_type) {
                 int64_t result = sqlite3_column_int64(stmt, i);
+                result = 0;
 
             } else if (("DOUBLE" == col_type || "FLOAT" == col_type)) {
                 double val = sqlite3_column_double(stmt, i);
+                val = 0;
 
             } else if ("BLOB" == col_type) {
                 int blob_size = sqlite3_column_bytes(stmt, i);
@@ -656,6 +661,7 @@ int load_data_to_cpp_type(std::string file_path) {
 
             } else if ("INTEGER" == col_type) {
                 int result = sqlite3_column_int(stmt, i);
+                result = 0;
             }
         }
          row_count++;
