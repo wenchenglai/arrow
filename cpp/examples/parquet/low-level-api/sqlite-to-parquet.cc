@@ -570,12 +570,12 @@ int load_data_to_cpp_type(string file_path) {
             //std::cout << i << " col_name = " << col_name << ", col_type = " << col_type << std::endl;
 
             if ("BIGINT" == col_type) {
-                int64_t result = sqlite3_column_int64(stmt, i);
-                result = 0;
+                int64_t val = sqlite3_column_int64(stmt, i);
+                val -= val;
 
             } else if (("DOUBLE" == col_type || "FLOAT" == col_type)) {
                 double val = sqlite3_column_double(stmt, i);
-                val = 0;
+                val -= val;
 
             } else if ("BLOB" == col_type) {
                 int blob_size = sqlite3_column_bytes(stmt, i);
@@ -586,8 +586,8 @@ int load_data_to_cpp_type(string file_path) {
                 }
 
             } else if ("INTEGER" == col_type) {
-                int result = sqlite3_column_int(stmt, i);
-                result = 0;
+                int val = sqlite3_column_int(stmt, i);
+                val -= val;
             }
         }
         row_count++;
