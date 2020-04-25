@@ -1,22 +1,29 @@
-#include <dirent.h>
 #include <cassert>
 #include <chrono>
+#include <dirent.h>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <thread>
-#include <future>
 
-#include "reader_writer.h"
-#include "sqlite3.h"
 #include <arrow/api.h>
-#include "arrow/util/decimal.h"
-#include "arrow/testing/util.h"
-//#include <arrow/io/api.h>
+#include <arrow/io/file.h>
+
+#include <parquet/api/reader.h>
+#include <parquet/api/writer.h>
 #include <parquet/arrow/reader.h>
 #include <parquet/arrow/writer.h>
 
+#include "arrow/util/decimal.h"
+#include "arrow/testing/util.h"
+
+#include "sqlite3.h"
+
 typedef std::shared_ptr<arrow::Table> table_ptr;
+typedef std::string string;
+typedef std::unordered_map<std::string, std::string> string_map;
+typedef std::vector<std::string> string_vec;
 
 #define EXIT_ON_FAILURE(expr)                      \
   do {                                             \
@@ -27,14 +34,14 @@ typedef std::shared_ptr<arrow::Table> table_ptr;
     }                                              \
   } while (0);
 
-std::string get_query_columns(std::string);
+string get_query_columns(string);
 
 enum memory_target_type {Arrow, CppType} memory_target;
 
-const std::string QUERY_COLUMNS_FILE_NAME = "columns.txt";
-const std::string PARQUET = ".parquet";
+const string QUERY_COLUMNS_FILE_NAME = "columns.txt";
+const string PARQUET = ".parquet";
 const int NODES_COUNT = 6;
-std::string CANONICAL_QUERY_STRING = get_query_columns(QUERY_COLUMNS_FILE_NAME);
+string CANONICAL_QUERY_STRING = get_query_columns(QUERY_COLUMNS_FILE_NAME);
 
 // split a big vector into n smaller vectors
 template<typename T>
@@ -96,36 +103,36 @@ void print_metadata(std::shared_ptr<parquet::FileMetaData> file_metadata) {
 }
 
 // break down a string using delimiter delim.
-void tokenize(std::string const &str, const char delim, std::vector<std::string> &out)
+void tokenize(string const &str, const char delim, string_vec &out)
 {
     size_t start;
     size_t end = 0;
 
-    while ((start = str.find_first_not_of(delim, end)) != std::string::npos)
+    while ((start = str.find_first_not_of(delim, end)) != string::npos)
     {
         end = str.find(delim, start);
         out.push_back(str.substr(start, end - start));
     }
 }
 
-std::vector<std::string> get_all_files_path_per_node(std::string dhl_name, std::string file_extension, int node_index) {
+string_vec get_all_files_path_per_node(string dhl_name, string file_extension, int node_index) {
     // CONSTANTS declaration, could move else where for more flexibility
-    std::string DHL_ROOT_PATH = "/mnt/nodes/";
+    string DHL_ROOT_PATH = "/mnt/nodes/";
 
     if (!opendir(DHL_ROOT_PATH.c_str())) {
         DHL_ROOT_PATH = "/Users/wen/github/arrow/data/test_dirs/";
     }
 
-    std::string DIE_ROW = "dierow_";
-    std::string SWATH = "swath_";
-    std::string CH0PATCH = "channel0." + file_extension;
-    std::string CH1PATCH = "channel1." + file_extension;
+    string DIE_ROW = "dierow_";
+    string SWATH = "swath_";
+    string CH0PATCH = "channel0." + file_extension;
+    string CH1PATCH = "channel1." + file_extension;
 
-    std::vector<std::string> file_paths;
+    string_vec file_paths;
 
-    std::string worker_node_path = "R" + std::to_string(node_index) + "C0S/";
+    string worker_node_path = "R" + std::to_string(node_index) + "C0S/";
 
-    std::string dhl_path = DHL_ROOT_PATH + worker_node_path + dhl_name;
+    string dhl_path = DHL_ROOT_PATH + worker_node_path + dhl_name;
 
     dhl_path = "/Volumes/remoteStorage/" + dhl_name;
 
@@ -137,29 +144,29 @@ std::vector<std::string> get_all_files_path_per_node(std::string dhl_name, std::
 
         while ((dhl_dir_item = readdir(dhl_dir)) != NULL) {
             if (dhl_dir_item->d_type == DT_DIR) {
-                std::string die_row_folder_name = dhl_dir_item->d_name;
+                string die_row_folder_name = dhl_dir_item->d_name;
 
-                if (die_row_folder_name.find(DIE_ROW) != std::string::npos) {
+                if (die_row_folder_name.find(DIE_ROW) != string::npos) {
                     DIR *die_row_dir = nullptr;
-                    std::string abs_die_row_path = dhl_path + "/" + die_row_folder_name;
+                    string abs_die_row_path = dhl_path + "/" + die_row_folder_name;
                     if ((die_row_dir = opendir(abs_die_row_path.c_str())) != NULL) {
                         struct dirent *die_row_dir_item;
                         while ((die_row_dir_item = readdir(die_row_dir)) != NULL) {
                             if (die_row_dir_item->d_type == DT_DIR) {
-                                std::string swath_folder_name = die_row_dir_item->d_name;
+                                string swath_folder_name = die_row_dir_item->d_name;
 
-                                if (swath_folder_name.find(SWATH) != std::string::npos) {
+                                if (swath_folder_name.find(SWATH) != string::npos) {
                                     DIR *swath_dir = nullptr;
-                                    std::string abs_swath_path = abs_die_row_path + "/" + swath_folder_name;
+                                    string abs_swath_path = abs_die_row_path + "/" + swath_folder_name;
                                     if ((swath_dir = opendir(abs_swath_path.c_str())) != NULL) {
                                         struct dirent *swath_dir_item;
                                         while ((swath_dir_item = readdir(swath_dir)) != NULL) {
                                             if (swath_dir_item->d_type == DT_REG) {
-                                                std::string full_path_file_name = swath_dir_item->d_name;
+                                                string full_path_file_name = swath_dir_item->d_name;
                                                 const char delim = '/';
-                                                std::vector<std::string> fileTokens;
+                                                string_vec fileTokens;
                                                 tokenize(full_path_file_name, delim, fileTokens);
-                                                std::string file_name_only = fileTokens.back();
+                                                string file_name_only = fileTokens.back();
 
                                                 if (file_name_only == CH0PATCH || file_name_only == CH1PATCH) {
                                                     //std::cout << "accepted file = " << full_path_file_name << std::endl;
@@ -183,17 +190,17 @@ std::vector<std::string> get_all_files_path_per_node(std::string dhl_name, std::
 }
 
 
-int get_all_files_path(std::string dhl_name, std::string file_extension, std::vector<std::vector<std::string>> &file_paths_all_nodes) {
+int get_all_files_path(string dhl_name, string file_extension, std::vector<string_vec> &file_paths_all_nodes) {
 
-    std::vector<std::future<std::vector<std::string>>> futures;
+    std::vector<std::future<string_vec>> futures;
     for (int i = 0; i < NODES_COUNT; i++) {
-        std::future<std::vector<std::string>> future = std::async(std::launch::async, get_all_files_path_per_node, dhl_name, file_extension, i);
+        std::future<string_vec> future = std::async(std::launch::async, get_all_files_path_per_node, dhl_name, file_extension, i);
         futures.push_back(std::move(future));
         break;
     }
 
     for (auto&& future : futures) {
-        std::vector<std::string> file_paths = future.get();
+        string_vec file_paths = future.get();
         file_paths_all_nodes.push_back(file_paths);
     }
 
@@ -201,7 +208,7 @@ int get_all_files_path(std::string dhl_name, std::string file_extension, std::ve
 }
 
 // print SQLite Data Source Schema
-void print_schema(std::unordered_map<std::string, std::string> const &source_schema_map) {
+void print_schema(string_map const &source_schema_map) {
     std::cout << "******** Schema ******** = " << std::endl;
     int i = 1;
     for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
@@ -210,7 +217,7 @@ void print_schema(std::unordered_map<std::string, std::string> const &source_sch
 }
 
 // Read the columns that we need to use from a file on disk
-std::string get_query_columns(std::string file_name) {
+string get_query_columns(string file_name) {
     std::ifstream in_file;
 
     in_file.open(file_name);
@@ -225,12 +232,12 @@ std::string get_query_columns(std::string file_name) {
 
     in_file.close();
 
-    return "SELECT " + std::string(columns) + " FROM attribTable";
+    return "SELECT " + string(columns) + " FROM attribTable";
 }
 
 // This function will get the SQLite data source schema.  We need to load this dynamically to create destination type,
 // which is typically an Arrow table.
-int get_schema(std::string file_path, std::unordered_map<std::string, std::string>& source_schema_map) {
+int get_schema(string file_path, string_map& source_schema_map) {
     sqlite3* pDb;
     int flags = (SQLITE_OPEN_READONLY);
 
@@ -241,7 +248,7 @@ int get_schema(std::string file_path, std::unordered_map<std::string, std::strin
         std::cerr << "Cannot Open DB: " << bResult << std::endl;
 
         if (nullptr != pDb) {
-            std::string strMsg = sqlite3_errmsg(pDb);
+            string strMsg = sqlite3_errmsg(pDb);
             sqlite3_close_v2(pDb);
             pDb = nullptr;
         } else {
@@ -250,8 +257,8 @@ int get_schema(std::string file_path, std::unordered_map<std::string, std::strin
         return EXIT_FAILURE;
     }
 
-    //std::string strKey = "sAr5w3Vk5l";
-    std::string strKey = "e9FkChw3xF";
+    //string strKey = "sAr5w3Vk5l";
+    string strKey = "e9FkChw3xF";
     bResult = sqlite3_key_v2(pDb, nullptr, strKey.c_str(), static_cast<int>(strKey.size()));
 
     if (SQLITE_OK != bResult) {
@@ -259,7 +266,7 @@ int get_schema(std::string file_path, std::unordered_map<std::string, std::strin
         std::cerr << "Cannot key the DB: " << bResult << std::endl;
 
         if (nullptr != pDb) {
-            std::string strMsg = sqlite3_errmsg(pDb);
+            string strMsg = sqlite3_errmsg(pDb);
             sqlite3_close_v2(pDb);
             pDb = nullptr;
             std::cerr << "SQLite Error Message: " << strMsg << std::endl;
@@ -270,7 +277,7 @@ int get_schema(std::string file_path, std::unordered_map<std::string, std::strin
         return 0;
     }
 
-    std::string query = CANONICAL_QUERY_STRING + " LIMIT 1;";
+    string query = CANONICAL_QUERY_STRING + " LIMIT 1;";
 
     sqlite3_stmt *stmt;
     bResult = sqlite3_prepare_v2(pDb, query.c_str(), -1, &stmt, NULL);
@@ -281,7 +288,7 @@ int get_schema(std::string file_path, std::unordered_map<std::string, std::strin
         std::cerr << "Cannot prepare statement from DB: " << bResult << std::endl;
 
         if (nullptr != pDb) {
-            std::string strMsg = sqlite3_errmsg(pDb);
+            string strMsg = sqlite3_errmsg(pDb);
             sqlite3_close_v2(pDb);
             pDb = nullptr;
             std::cerr << "SQLite Error Message: " << strMsg << std::endl;
@@ -299,17 +306,17 @@ int get_schema(std::string file_path, std::unordered_map<std::string, std::strin
     // we need this to generalize data scanning to create arrow column builder
     // Also, arrow table creation needs to build similar schema
     for (int i = 0; i < col_count; i++) {
-        std::string col_name = sqlite3_column_name(stmt, i);
-        std::string col_type = sqlite3_column_decltype(stmt, i);
+        string col_name = sqlite3_column_name(stmt, i);
+        string col_type = sqlite3_column_decltype(stmt, i);
         source_schema_map[col_name] = col_type;
     }
     return EXIT_SUCCESS;
 }
 
 int load_data_to_arrow(
-        std::string file_path,
-        std::unordered_map<std::string, std::string> const &source_schema_map,
-        std::shared_ptr<arrow::Table>* table) {
+        string file_path,
+        string_map const &source_schema_map,
+        table_ptr* table) {
 
     arrow::MemoryPool* pool = arrow::default_memory_pool();
 
@@ -321,10 +328,10 @@ int load_data_to_arrow(
     //FLOAT FloatingPointBuilder
     //INTEGER IntBuilder;
 
-    std::unordered_map<std::string, std::shared_ptr<arrow::Int64Builder>> int64_builder_map;
-    std::unordered_map<std::string, std::shared_ptr<arrow::DoubleBuilder>> double_builder_map;
-    std::unordered_map<std::string, std::shared_ptr<arrow::BinaryBuilder>> binary_builder_map;
-    std::unordered_map<std::string, std::shared_ptr<arrow::Int32Builder>> int_builder_map;
+    std::unordered_map<string, std::shared_ptr<arrow::Int64Builder>> int64_builder_map;
+    std::unordered_map<string, std::shared_ptr<arrow::DoubleBuilder>> double_builder_map;
+    std::unordered_map<string, std::shared_ptr<arrow::BinaryBuilder>> binary_builder_map;
+    std::unordered_map<string, std::shared_ptr<arrow::Int32Builder>> int_builder_map;
 
     for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
         if ("BIGINT" == itr->second) {
@@ -350,7 +357,7 @@ int load_data_to_arrow(
         std::cerr << "Cannot Open DB: " << bResult << std::endl;
 
         if (nullptr != pDb) {
-            std::string strMsg = sqlite3_errmsg(pDb);
+            string strMsg = sqlite3_errmsg(pDb);
             sqlite3_close_v2(pDb);
             pDb = nullptr;
         } else {
@@ -359,8 +366,8 @@ int load_data_to_arrow(
         return EXIT_FAILURE;
     }
 
-    //std::string strKey = "sAr5w3Vk5l";
-    std::string strKey = "e9FkChw3xF";
+    //string strKey = "sAr5w3Vk5l";
+    string strKey = "e9FkChw3xF";
     bResult = sqlite3_key_v2(pDb, nullptr, strKey.c_str(), static_cast<int>(strKey.size()));
 
     if (SQLITE_OK != bResult) {
@@ -368,7 +375,7 @@ int load_data_to_arrow(
         std::cerr << "Cannot key the DB: " << bResult << std::endl;
 
         if (nullptr != pDb) {
-            std::string strMsg = sqlite3_errmsg(pDb);
+            string strMsg = sqlite3_errmsg(pDb);
             sqlite3_close_v2(pDb);
             pDb = nullptr;
             std::cerr << "SQLite Error Message: " << strMsg << std::endl;
@@ -379,7 +386,7 @@ int load_data_to_arrow(
         return EXIT_FAILURE;
     }
 
-    std::string query = CANONICAL_QUERY_STRING + ";";
+    string query = CANONICAL_QUERY_STRING + ";";
 
     sqlite3_stmt *stmt;
     bResult = sqlite3_prepare_v2(pDb, query.c_str(), -1, &stmt, NULL);
@@ -390,7 +397,7 @@ int load_data_to_arrow(
         std::cerr << "Cannot prepare statement from DB: " << bResult << std::endl;
 
         if (nullptr != pDb) {
-            std::string strMsg = sqlite3_errmsg(pDb);
+            string strMsg = sqlite3_errmsg(pDb);
             sqlite3_close_v2(pDb);
             pDb = nullptr;
             std::cerr << "SQLite Error Message: " << strMsg << std::endl;
@@ -405,8 +412,8 @@ int load_data_to_arrow(
 
     while ((bResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         for (int i = 0; i < col_count; i++) {
-            std::string col_name = sqlite3_column_name(stmt, i);
-            std::string col_type = sqlite3_column_decltype(stmt, i);
+            string col_name = sqlite3_column_name(stmt, i);
+            string col_type = sqlite3_column_decltype(stmt, i);
             //std::cout << i << " col_name = " << col_name << ", col_type = " << col_type << std::endl;
 
             if ("BIGINT" == col_type && int64_builder_map.find(col_name) != int64_builder_map.end()) {
@@ -451,8 +458,8 @@ int load_data_to_arrow(
     std::vector<std::shared_ptr<arrow::Array>> arrays;
     std::vector<std::shared_ptr<arrow::Field>> schema_vector;
     for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
-        std::string col_name = itr->first;
-        std::string col_type = itr->second;
+        string col_name = itr->first;
+        string col_type = itr->second;
 
         std::shared_ptr<arrow::Array> array;
         if ("BIGINT" == col_type && int64_builder_map.find(col_name) != int64_builder_map.end()) {
@@ -492,7 +499,7 @@ int load_data_to_arrow(
     return 1;
 }
 
-int load_data_to_cpp_type(std::string file_path) {
+int load_data_to_cpp_type(string file_path) {
     sqlite3* pDb;
     int flags = (SQLITE_OPEN_READONLY);
     int bResult = sqlite3_open_v2(file_path.c_str(), &pDb, flags, NULL);
@@ -502,7 +509,7 @@ int load_data_to_cpp_type(std::string file_path) {
         std::cerr << "Cannot Open DB: " << bResult << std::endl;
 
         if (nullptr != pDb) {
-            std::string strMsg = sqlite3_errmsg(pDb);
+            string strMsg = sqlite3_errmsg(pDb);
             sqlite3_close_v2(pDb);
             pDb = nullptr;
         } else {
@@ -511,8 +518,8 @@ int load_data_to_cpp_type(std::string file_path) {
         return EXIT_FAILURE;
     }
 
-    //std::string strKey = "sAr5w3Vk5l";
-    std::string strKey = "e9FkChw3xF";
+    //string strKey = "sAr5w3Vk5l";
+    string strKey = "e9FkChw3xF";
     bResult = sqlite3_key_v2(pDb, nullptr, strKey.c_str(), static_cast<int>(strKey.size()));
 
     if (SQLITE_OK != bResult) {
@@ -520,7 +527,7 @@ int load_data_to_cpp_type(std::string file_path) {
         std::cerr << "Cannot key the DB: " << bResult << std::endl;
 
         if (nullptr != pDb) {
-            std::string strMsg = sqlite3_errmsg(pDb);
+            string strMsg = sqlite3_errmsg(pDb);
             sqlite3_close_v2(pDb);
             pDb = nullptr;
             std::cerr << "SQLite Error Message: " << strMsg << std::endl;
@@ -531,7 +538,7 @@ int load_data_to_cpp_type(std::string file_path) {
         return EXIT_FAILURE;
     }
 
-    std::string query = CANONICAL_QUERY_STRING + ";";
+    string query = CANONICAL_QUERY_STRING + ";";
 
     sqlite3_stmt *stmt;
     bResult = sqlite3_prepare_v2(pDb, query.c_str(), -1, &stmt, NULL);
@@ -542,7 +549,7 @@ int load_data_to_cpp_type(std::string file_path) {
         std::cerr << "Cannot prepare statement from DB: " << bResult << std::endl;
 
         if (nullptr != pDb) {
-            std::string strMsg = sqlite3_errmsg(pDb);
+            string strMsg = sqlite3_errmsg(pDb);
             sqlite3_close_v2(pDb);
             pDb = nullptr;
             std::cerr << "SQLite Error Message: " << strMsg << std::endl;
@@ -558,15 +565,17 @@ int load_data_to_cpp_type(std::string file_path) {
 
     while ((bResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         for (int i = 0; i < col_count; i++) {
-            std::string col_name = sqlite3_column_name(stmt, i);
-            std::string col_type = sqlite3_column_decltype(stmt, i);
+            string col_name = sqlite3_column_name(stmt, i);
+            string col_type = sqlite3_column_decltype(stmt, i);
             //std::cout << i << " col_name = " << col_name << ", col_type = " << col_type << std::endl;
 
             if ("BIGINT" == col_type) {
                 int64_t result = sqlite3_column_int64(stmt, i);
+                result = 0;
 
             } else if (("DOUBLE" == col_type || "FLOAT" == col_type)) {
                 double val = sqlite3_column_double(stmt, i);
+                val = 0;
 
             } else if ("BLOB" == col_type) {
                 int blob_size = sqlite3_column_bytes(stmt, i);
@@ -578,6 +587,7 @@ int load_data_to_cpp_type(std::string file_path) {
 
             } else if ("INTEGER" == col_type) {
                 int result = sqlite3_column_int(stmt, i);
+                result = 0;
             }
         }
         row_count++;
@@ -599,11 +609,11 @@ void write_parquet_file(const arrow::Table& table, int node_id) {
     std::shared_ptr<arrow::io::FileOutputStream> outfile;
     PARQUET_ASSIGN_OR_THROW(outfile,arrow::io::FileOutputStream::Open(std::to_string(node_id) + ".parquet"));
 
-    std::string column_name_0 = "MinDim";
-    const std::string kFooterEncryptionKey = "0123456789012345";
-    const std::string kColumnEncryptionKey1 = "1234567890123450";
+    string column_name_0 = "MinDim";
+    const string kFooterEncryptionKey = "0123456789012345";
+    const string kColumnEncryptionKey1 = "1234567890123450";
 
-    std::map<std::string, std::shared_ptr<parquet::ColumnEncryptionProperties>> encryption_cols;
+    std::map<string, std::shared_ptr<parquet::ColumnEncryptionProperties>> encryption_cols;
 
     parquet::ColumnEncryptionProperties::Builder encryption_col_builder0(column_name_0);
 
@@ -625,9 +635,11 @@ void write_parquet_file(const arrow::Table& table, int node_id) {
 }
 
 int process_each_data_batch(
-        std::vector<std::string> const &file_paths,
-        std::unordered_map<std::string, std::string> const &source_schema_map,
+        string_vec const &file_paths,
+        string_map const &source_schema_map,
         memory_target_type memory_target, int thread_id) {
+
+    // output variable that holds total rows for this data batch
     int sum_num_rows_per_thread = 0;
 
     if (memory_target == Arrow) {
@@ -635,6 +647,7 @@ int process_each_data_batch(
         tables.reserve(2100);
         int table_count = 0;
 
+        // individual db file will be process in this loop
         for (auto file_path : file_paths) {
             table_ptr table;
             load_data_to_arrow(file_path, source_schema_map, &table);
@@ -657,12 +670,11 @@ int process_each_data_batch(
             } else {
                 std::cout << "IN LOOP: We didn't push_back for table # : " << table_count << std::endl;
             }
-
         }
-        //std::cout << "Total rows in memory for this thread:  " << sum_num_rows_per_thread << std::endl;
+        std::cout << "Total tables processed:  " << table_count << std::endl;
 
-        //arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
-        //std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
+        //arrow::Result<table_ptr> result = arrow::ConcatenateTables(tables);
+        //table_ptr result_table = result.ValueOrDie();
         //std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", thread id = " << thread_id << std::endl;
 
         //write_parquet_file(*result_table, thread_id);
@@ -679,8 +691,8 @@ int process_each_data_batch(
 }
 
 int main(int argc, char** argv) {
-    std::string dhl_name = "";
-    std::string file_extension = "patch";
+    string dhl_name = "";
+    string file_extension = "patch";
     int thread_count_per_node = 1;
     memory_target_type memory_target = Arrow;
 
@@ -703,7 +715,7 @@ int main(int argc, char** argv) {
     }
 
     if (argc > 4) {
-        std::string target = argv[4];
+        string target = argv[4];
 
         if ("cppType" == target) {
             memory_target = CppType;
@@ -727,7 +739,7 @@ int main(int argc, char** argv) {
     auto start = std::chrono::steady_clock::now();
 
     // we will create one vector of patch files per node
-    std::vector<std::vector<std::string>> file_paths_all_nodes;
+    std::vector<string_vec> file_paths_all_nodes;
     get_all_files_path(dhl_name, file_extension, file_paths_all_nodes);
 
     auto stop1 = std::chrono::steady_clock::now();
@@ -739,7 +751,7 @@ int main(int argc, char** argv) {
     }
     // create data source db schema, as it's needed for arrow table creation
     // it's better to get schema here, because every thread need the same schema object
-    std::unordered_map<std::string, std::string> source_schema_map;
+    string_map source_schema_map;
     get_schema(file_paths_all_nodes.front().front(), source_schema_map);
     //print_schema(source_schema_map);
 
