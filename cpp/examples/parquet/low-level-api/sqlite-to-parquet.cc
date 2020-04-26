@@ -41,6 +41,12 @@ enum memory_target_type {Arrow, CppType} memory_target;
 const string QUERY_COLUMNS_FILE_NAME = "columns.txt";
 const string PARQUET = ".parquet";
 const int NODES_COUNT = 6;
+const int PARQ_ROW_GROUP_SIZE = 1000;
+const string col_encryp_key_id = "key1";
+const string col_encryp_key = "9874567896123459";
+const string footer_encryp_key_id = "key2";
+const string footer_encryp_key = "9123856789712348";
+
 string CANONICAL_QUERY_STRING = get_query_columns(QUERY_COLUMNS_FILE_NAME);
 
 // split a big vector into n smaller vectors
@@ -605,33 +611,28 @@ int load_data_to_cpp_type(string file_path) {
 }
 
 // Write out the data as a Parquet file.  It'll also encrypt the output file.
-void write_parquet_file(const arrow::Table& table, int node_id) {
+void write_parquet_file(const arrow::Table& table, int node_id, string_map const &source_schema_map) {
     std::shared_ptr<arrow::io::FileOutputStream> outfile;
-    PARQUET_ASSIGN_OR_THROW(outfile,arrow::io::FileOutputStream::Open(std::to_string(node_id) + ".parquet"));
-
-    string column_name_0 = "MinDim";
-    const string kFooterEncryptionKey = "0123456789012345";
-    const string kColumnEncryptionKey1 = "1234567890123450";
+    PARQUET_ASSIGN_OR_THROW(outfile,arrow::io::FileOutputStream::Open(std::to_string(node_id) + PARQUET));
 
     std::map<string, std::shared_ptr<parquet::ColumnEncryptionProperties>> encryption_cols;
 
-    parquet::ColumnEncryptionProperties::Builder encryption_col_builder0(column_name_0);
-
-    encryption_col_builder0.key(kColumnEncryptionKey1)->key_id("kc1");
-
-    encryption_cols[column_name_0] = encryption_col_builder0.build();
-
-    parquet::FileEncryptionProperties::Builder file_encryption_builder(kFooterEncryptionKey);
+    // we always encrypt all columns
+    for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
+        string column_name = itr->first;
+        parquet::ColumnEncryptionProperties::Builder encryption_col_builder(column_name);
+        encryption_col_builder.key(col_encryp_key)->key_id(col_encryp_key_id);
+        encryption_cols[column_name] = encryption_col_builder.build();
+    }
+    parquet::FileEncryptionProperties::Builder file_encryption_builder(footer_encryp_key);
 
     parquet::WriterProperties::Builder builder;
-    builder.encryption(file_encryption_builder.footer_key_metadata("kf")->encrypted_columns(encryption_cols)->build());
+    builder.encryption(file_encryption_builder.footer_key_metadata(footer_encryp_key_id)->encrypted_columns(encryption_cols)->build());
 
     builder.compression(parquet::Compression::SNAPPY);
     std::shared_ptr<parquet::WriterProperties> props = builder.build();
-
-    int row_group_size = 3;
-    //std::shared_ptr<parquet::WriterProperties> properties = parquet::default_writer_properties();
-    PARQUET_THROW_NOT_OK(parquet::arrow::WriteTable(table, arrow::default_memory_pool(), outfile, row_group_size, props));
+    
+    PARQUET_THROW_NOT_OK(parquet::arrow::WriteTable(table, arrow::default_memory_pool(), outfile, PARQ_ROW_GROUP_SIZE, props));
 }
 
 int process_each_data_batch(
@@ -664,20 +665,23 @@ int process_each_data_batch(
 
             std::cout << "IN LOOP: Before push_back, we have total rows:" << sum_num_rows_per_thread << ", table_count = " << table_count << ", current rows = " << current_rows << std::endl;
 
-            if (tables.size() < 412) {
-                tables.push_back(table);
-                std::cout << "IN LOOP: Vector size = " << tables.size() <<", capacity = " << tables.capacity() << std::endl;
-            } else {
-                std::cout << "IN LOOP: We didn't push_back for table # : " << table_count << std::endl;
+//            if (tables.size() < 412) {
+//                tables.push_back(table);
+//                std::cout << "IN LOOP: Vector size = " << tables.size() <<", capacity = " << tables.capacity() << std::endl;
+//            } else {
+//                std::cout << "IN LOOP: We didn't push_back for table # : " << table_count << std::endl;
+//            }
+            if (tables.size() > 100) {
+                break;
             }
         }
-        std::cout << "Total tables processed:  " << table_count << std::endl;
+        //std::cout << "Total tables processed:  " << table_count << std::endl;
 
-        //arrow::Result<table_ptr> result = arrow::ConcatenateTables(tables);
-        //table_ptr result_table = result.ValueOrDie();
-        //std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", thread id = " << thread_id << std::endl;
+        arrow::Result<table_ptr> result = arrow::ConcatenateTables(tables);
+        table_ptr result_table = result.ValueOrDie();
+        std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", thread id = " << thread_id << std::endl;
 
-        //write_parquet_file(*result_table, thread_id);
+        write_parquet_file(*result_table, thread_id, source_schema_map);
 
     } else if (memory_target == CppType) {
         // we just load data into cpp type in memory
