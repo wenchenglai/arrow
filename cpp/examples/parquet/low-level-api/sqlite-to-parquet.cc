@@ -146,7 +146,7 @@ string_vec get_all_files_path_per_node(string dhl_name, string file_extension, i
     // for vi3-0009
     //dhl_path = "/Volumes/remoteStorage/" + dhl_name;
     // for windows Linux
-    //dhl_path = "/home/wen/github/arrow/data/test_dirs/" + dhl_name
+    //dhl_path = "/home/wen/github/arrow/data/test_dirs/" + dhl_name;
 
     std::cout << "Top Level Path = " << dhl_path << std::endl;
 
