@@ -503,6 +503,14 @@ int load_data_to_arrow(
 
                     std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
                     PARQUET_THROW_NOT_OK(builder->Append(pBuffer, blob_size));
+                } else {
+                    // blob_size is zero, what should we do?
+                    //std::cout << col_name << " blob_size is zero" << std::endl;
+                    blob_size = 1;
+                    uint8_t local_buffer[blob_size];
+                    //std::copy(pBuffer, pBuffer + blob_size, &buffer[0]);
+                    std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
+                    PARQUET_THROW_NOT_OK(builder->Append(local_buffer, blob_size));
                 }
             } else if ("INTEGER" == col_type && int_builder_map.find(col_name) != int_builder_map.end()) {
                 std::shared_ptr<arrow::Int32Builder> builder = int_builder_map[col_name];
@@ -753,6 +761,12 @@ int main(int argc, char** argv) {
     std::string file_extension = "patch";
     int thread_count_per_node = 1;
     memory_target_type memory_target = Arrow;
+
+    // Print Help message
+    if(argc == 2 && strcmp(argv[1], "-h")==0) {
+        std::cout << "sqlite-reader test_dhl patch|patchAttr|patchAttr340M 6|12|24|48 cppType" << std::endl;
+        return 0;
+    }
 
     if (argc > 1) {
         dhl_name = argv[1];

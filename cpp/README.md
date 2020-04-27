@@ -22,13 +22,23 @@
 This directory contains the code and build system for the Arrow C++ libraries,
 as well as for the C++ libraries for Apache Parquet.
 
-# Parquet Reader
+# Release Build
 
 mkdir parquet_release
 
 cd parquet_release/
 
 cmake -DARROW_PARQUET=ON -DARROW_OPTIONAL_INSTALL=ON -DPARQUET_BUILD_EXAMPLES=ON -DARROW_BUILD_EXAMPLES=ON -DPARQUET_REQUIRE_ENCRYPTION=ON -DARROW_WITH_SNAPPY=ON ..
+
+# Debug Build
+
+mkdir parquet_debug
+
+cd parquet_debug/
+
+cmake -DCMAKE_BUILD_TYPE=Debug -DARROW_PARQUET=ON -DARROW_OPTIONAL_INSTALL=ON -DPARQUET_BUILD_EXAMPLES=ON -DARROW_BUILD_EXAMPLES=ON -DPARQUET_REQUIRE_ENCRYPTION=ON -DARROW_WITH_SNAPPY=ON ..
+
+# Build Binaries
 
 make install
 
@@ -42,7 +52,6 @@ run the app:
 
 ./dhl-reader ../../../data
 
-
 Test data is located at arrow/data folder, there are multiple parquet files.
 
 ## possible compilation error
@@ -52,6 +61,8 @@ You must have libssl installed to have cryptograpic feature enabled
 `sudo apt-get install libssl-dev`
 
 If there are missing so file, you can simply copy them from the installation folder on development machine and store it in the same deployment folder as the executable.
+
+"so" files that you should include are libssl and libcrypt.
 
 ## Test on ViX
 

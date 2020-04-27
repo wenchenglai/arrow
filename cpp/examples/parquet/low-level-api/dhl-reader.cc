@@ -10,6 +10,10 @@
 #include <arrow/api.h>
 #include <arrow/io/file.h>
 #include <parquet/arrow/reader.h>
+#include <parquet/api/reader.h>
+
+
+#include "common.h"
 
 /*
  * This example describes writing and reading Parquet Files in C++ and serves as a
@@ -68,35 +72,86 @@ void print_metadata(std::shared_ptr<parquet::FileMetaData> file_metadata) {
     std::cout << "Has Encryption? = " << is_encrypted << std::endl;
 }
 
-std::shared_ptr<arrow::Table> read_parquet_file_into_arrow_table(std::string file_path) {
-    std::shared_ptr<arrow::io::ReadableFile> infile;
-    PARQUET_ASSIGN_OR_THROW(infile,arrow::io::ReadableFile::Open(file_path, arrow::default_memory_pool()));
+// open a parquet file (with encryption if needed) and save it into an arrow table
+table_ptr read_parquet_file_into_arrow_table(string file_path, bool has_encrypt) {
+    parquet::ReaderProperties reader_properties = parquet::default_reader_properties();
 
-    std::unique_ptr<parquet::arrow::FileReader> reader;
-    PARQUET_THROW_NOT_OK(parquet::arrow::OpenFile(infile, arrow::default_memory_pool(), &reader));
+    if (has_encrypt) {
+        std::shared_ptr<parquet::StringKeyIdRetriever> string_kr = std::make_shared<parquet::StringKeyIdRetriever>();
+        string_kr->PutKey(footer_encryp_key_id, footer_encryp_key);
+        string_kr->PutKey(col_encryp_key_id, col_encryp_key);
+        std::shared_ptr<parquet::DecryptionKeyRetriever> kr = std::static_pointer_cast<parquet::StringKeyIdRetriever>(string_kr);
 
-    std::shared_ptr<arrow::Table> table;
-    PARQUET_THROW_NOT_OK(reader->ReadTable(&table));
+        parquet::FileDecryptionProperties::Builder file_decryption_builder;
+        reader_properties.file_decryption_properties(file_decryption_builder.key_retriever(kr)->build());
+    }
 
-    return table;
+    try {
+        std::unique_ptr<parquet::ParquetFileReader> parquet_reader =
+                parquet::ParquetFileReader::OpenFile(file_path, false, reader_properties);
+
+//        std::shared_ptr<parquet::FileMetaData> file_metadata = parquet_reader->metadata();
+//
+//        // Get the number of RowGroups
+//        int num_row_groups = file_metadata->num_row_groups();
+//        //assert(num_row_groups == 1);
+//
+//        // Get the number of Columns
+//        int num_columns = file_metadata->num_columns();
+//        //assert(num_columns == 8);
+//
+//        std::cout << "file: " << file_path << ", num of row groups = " << num_row_groups << ", num_columns = " << num_columns << std::endl;
+//
+//        int64_t values_read = 0;
+//        int64_t rows_read = 0;
+//        int16_t definition_level;
+//        int16_t repetition_level;
+//
+//        std::shared_ptr<parquet::RowGroupReader> row_group_reader = parquet_reader->RowGroup(0);
+//
+//        std::shared_ptr<parquet::ColumnReader> column_reader = row_group_reader->Column(0);
+//
+//        parquet::Int64Reader* int64_reader = static_cast<parquet::Int64Reader*>(column_reader.get());
+//        // Read all the rows in the column
+//        int i = 0;
+//        while (int64_reader->HasNext()) {
+//            int64_t value;
+//            // Read one value at a time. The number of rows read is returned. values_read
+//            // contains the number of non-null rows
+//            rows_read = int64_reader->ReadBatch(10, &definition_level, &repetition_level, &value, &values_read);
+//
+//            std::cout << i << " deflevel: " << definition_level << ", replevel: " << repetition_level << ", value: " << value << ", valread: " << values_read << std::endl;
+//
+//            i++;
+//        }
+
+        // convert parquet reader to arrow reader, so we can get the arrow table
+        std::unique_ptr<parquet::arrow::FileReader> arrow_reader;
+        PARQUET_THROW_NOT_OK(parquet::arrow::FileReader::Make(::arrow::default_memory_pool(), std::move(parquet_reader), &arrow_reader));
+        table_ptr table;
+        PARQUET_THROW_NOT_OK(arrow_reader->ReadTable(&table));
+
+        return table;
+    } catch (const std::exception& e) {
+        std::cerr << "Parquet read error: " << e.what() << std::endl;
+    }
+    return nullptr;
 }
 
-int load_data_from_folder(std::string input_folder_path) {
+// Load each parquet file inside this folder path
+// Each parquet file will spawn an independent thread
+int load_data_from_folder(std::string input_folder_path, bool has_encrypt) {
     DIR *dir;
     struct dirent *ent;
 
     if ((dir = opendir (input_folder_path.c_str())) != NULL) {
-        //int row_count = 0;
-        //int column_count = 0;
-
-        //std::vector<std::thread> threads;
         std::vector<std::future<std::shared_ptr<arrow::Table>>> futures;
 
-        /* print all the files and directories within directory */
+        // print all the files and directories within directory
         while ((ent = readdir (dir)) != NULL) {
             std::string file_name = ent->d_name;
 
-            // get rid of . folder and other non-parquet files
+            // get rid of hidden . folder and other non-parquet files
             if (file_name.find(PARQUET) != std::string::npos) {
                 int length = file_name.length();
 
@@ -105,15 +160,12 @@ int load_data_from_folder(std::string input_folder_path) {
                     std::string full_file_path = input_folder_path + file_name;
                     std::cout << "Reading parquet file: " << full_file_path << std::endl;
 
-                    std::future<std::shared_ptr<arrow::Table>> future = std::async(std::launch::async, read_parquet_file_into_arrow_table, full_file_path);
+                    std::future<std::shared_ptr<arrow::Table>> future = std::async(
+                            std::launch::async,
+                            read_parquet_file_into_arrow_table,
+                            full_file_path,
+                            has_encrypt);
                     futures.push_back(std::move(future));
-
-                    //threads.push_back(std::thread(read_whole_file_thread, input_folder_path + "/" + file_name));
-
-                    //row_count += new_table->num_rows();
-                    //column_count = new_table->num_columns();
-
-                    //tables.push_back(new_table);
                 }
             }
         }
@@ -121,18 +173,14 @@ int load_data_from_folder(std::string input_folder_path) {
 
         std::cout << "All threads have been started...." << std::endl;
 
-//        for (auto& th : threads) {
-//            th.join();
-//        }
-
         std::vector<std::shared_ptr<arrow::Table>> tables;
         for (auto&& future : futures) {
             std::shared_ptr<arrow::Table> table = future.get();
             tables.push_back(table);
-            std::cout << "This table loaded " << table->num_rows() << " total rows." << std::endl;
+            std::cout << "This table finished loading " << table->num_rows() << " total rows." << std::endl;
         }
 
-        std::cout << "All thread are finished, let's combine them into one table." << std::endl;
+        std::cout << "All thread are finished, we have " << tables.size() << " tables. Let's combine them into one table." << std::endl;
         auto start = std::chrono::steady_clock::now();
 
         arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
@@ -140,7 +188,7 @@ int load_data_from_folder(std::string input_folder_path) {
 
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> elapsed_seconds = end - start;
-        std::cout << "Combining all tables takes: " << elapsed_seconds.count() << ".  The table has " << result_table->num_rows() << " rows and " << result_table->num_columns() << " columns." << std::endl;
+        std::cout << "Combining all tables takes: " << elapsed_seconds.count() << ".  The merged table has " << result_table->num_rows() << " rows and " << result_table->num_columns() << " columns." << std::endl;
 
         //std::cout << "Loaded " << row_count << " total rows in " << column_count << " columns." << std::endl;
         return EXIT_SUCCESS;
@@ -153,15 +201,33 @@ int load_data_from_folder(std::string input_folder_path) {
 
 int main(int argc, char** argv) {
     std::string input_folder_path = "";
+    bool has_encrypt = true;
+
+    // Print Help message
+    if(argc == 2 && strcmp(argv[1], "-h") == 0) {
+        std::cout << "Parameters List" << std::endl;
+        std::cout << "1: folder path that contains one or more parquet files" << std::endl;
+        std::cout << "2: use parquet encryption to read" << std::endl;
+        std::cout << "dhl-reader parquet_folder 1|0" << std::endl;
+        return 0;
+    }
+
     if (argc > 1) {
         input_folder_path = argv[1];
     }
-    //std::cout << "argc = " << argc << ", argv = " << input_folder_path << std::endl;
+
+    if (argc > 2) {
+        string encrypt = argv[2];
+
+        if ("0" == encrypt) {
+            has_encrypt = false;
+        }
+    }
 
     try {
         auto start = std::chrono::steady_clock::now();
 
-        load_data_from_folder(input_folder_path);
+        load_data_from_folder(input_folder_path, has_encrypt);
 
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> elapsed_seconds = end - start;

@@ -140,7 +140,7 @@ string_vec get_all_files_path_per_node(string dhl_name, string file_extension, i
 
     string dhl_path = DHL_ROOT_PATH + worker_node_path + dhl_name;
 
-    dhl_path = "/Volumes/remoteStorage/" + dhl_name;
+    //dhl_path = "/Volumes/remoteStorage/" + dhl_name;
 
     std::cout << "Top Level Path = " << dhl_path << std::endl;
 
@@ -202,6 +202,8 @@ int get_all_files_path(string dhl_name, string file_extension, std::vector<strin
     for (int i = 0; i < NODES_COUNT; i++) {
         std::future<string_vec> future = std::async(std::launch::async, get_all_files_path_per_node, dhl_name, file_extension, i);
         futures.push_back(std::move(future));
+
+        // TODO
         break;
     }
 
@@ -441,6 +443,14 @@ int load_data_to_arrow(
 
                     std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
                     PARQUET_THROW_NOT_OK(builder->Append(pBuffer, blob_size));
+                } else {
+                    // blob_size is zero, what should we do?
+                    //std::cout << col_name << " blob_size is zero" << std::endl;
+                    blob_size = 1;
+                    uint8_t local_buffer[blob_size];
+                    //std::copy(pBuffer, pBuffer + blob_size, &buffer[0]);
+                    std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
+                    PARQUET_THROW_NOT_OK(builder->Append(local_buffer, blob_size));
                 }
             } else if ("INTEGER" == col_type && int_builder_map.find(col_name) != int_builder_map.end()) {
                 std::shared_ptr<arrow::Int32Builder> builder = int_builder_map[col_name];
@@ -611,34 +621,52 @@ int load_data_to_cpp_type(string file_path) {
 }
 
 // Write out the data as a Parquet file.  It'll also encrypt the output file.
-void write_parquet_file(const arrow::Table& table, int node_id, string_map const &source_schema_map) {
+void write_parquet_file(const arrow::Table& table, int node_id, string_map const &source_schema_map, bool has_encrypt) {
+    parquet::WriterProperties::Builder wp_builder;
+
+    if (has_encrypt) {
+        std::map<string, std::shared_ptr<parquet::ColumnEncryptionProperties>> encryption_cols;
+
+        // we always encrypt all columns
+        for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
+            string column_name = itr->first;
+            parquet::ColumnEncryptionProperties::Builder encryption_col_builder(column_name);
+            encryption_col_builder.key(col_encryp_key)->key_id(col_encryp_key_id);
+            encryption_cols[column_name] = encryption_col_builder.build();
+        }
+
+        parquet::FileEncryptionProperties::Builder file_encryption_builder(footer_encryp_key);
+        wp_builder.encryption(file_encryption_builder.footer_key_metadata(footer_encryp_key_id)->encrypted_columns(encryption_cols)->build());
+    }
+
+    wp_builder.compression(parquet::Compression::SNAPPY);
+    std::shared_ptr<parquet::WriterProperties> props = wp_builder.build();
+
     std::shared_ptr<arrow::io::FileOutputStream> outfile;
     PARQUET_ASSIGN_OR_THROW(outfile,arrow::io::FileOutputStream::Open(std::to_string(node_id) + PARQUET));
 
-    std::map<string, std::shared_ptr<parquet::ColumnEncryptionProperties>> encryption_cols;
-
-    // we always encrypt all columns
-    for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
-        string column_name = itr->first;
-        parquet::ColumnEncryptionProperties::Builder encryption_col_builder(column_name);
-        encryption_col_builder.key(col_encryp_key)->key_id(col_encryp_key_id);
-        encryption_cols[column_name] = encryption_col_builder.build();
-    }
-    parquet::FileEncryptionProperties::Builder file_encryption_builder(footer_encryp_key);
-
-    parquet::WriterProperties::Builder builder;
-    builder.encryption(file_encryption_builder.footer_key_metadata(footer_encryp_key_id)->encrypted_columns(encryption_cols)->build());
-
-    builder.compression(parquet::Compression::SNAPPY);
-    std::shared_ptr<parquet::WriterProperties> props = builder.build();
-    
     PARQUET_THROW_NOT_OK(parquet::arrow::WriteTable(table, arrow::default_memory_pool(), outfile, PARQ_ROW_GROUP_SIZE, props));
+
+//    std::cout << "Num of cols:" << table.num_columns() << std::endl;
+//
+//    std::shared_ptr<arrow::Schema> schema = table.schema();
+//
+//    std::vector<std::shared_ptr<arrow::Field>> fields = schema->fields();
+//
+//    std::cout << "Num of fields: " << fields.size() << std::endl;
+//
+//    for (auto field : fields) {
+//        std::shared_ptr<arrow::ChunkedArray> ca = table.GetColumnByName(field->name());
+//        std::cout << field->name() << ": " << ca->length() << std::endl;
+//    }
 }
 
 int process_each_data_batch(
         string_vec const &file_paths,
         string_map const &source_schema_map,
-        memory_target_type memory_target, int thread_id) {
+        memory_target_type memory_target,
+        int thread_id,
+        bool has_encrypt) {
 
     // output variable that holds total rows for this data batch
     int sum_num_rows_per_thread = 0;
@@ -657,21 +685,16 @@ int process_each_data_batch(
 
             table_count += 1;
 
-            if (current_rows <= 0) {
-                std::cout << "**** File has zero records: " << file_path << std::endl;
-            }
+//            if (current_rows <= 0) {
+//                std::cout << "**** File has zero records: " << file_path << std::endl;
+//            }
 
             sum_num_rows_per_thread += current_rows;
 
-            std::cout << "IN LOOP: Before push_back, we have total rows:" << sum_num_rows_per_thread << ", table_count = " << table_count << ", current rows = " << current_rows << std::endl;
+            //std::cout << "IN LOOP: Before push_back, we have total rows:" << sum_num_rows_per_thread << ", table_count = " << table_count << ", current rows = " << current_rows << std::endl;
 
-//            if (tables.size() < 412) {
-//                tables.push_back(table);
-//                std::cout << "IN LOOP: Vector size = " << tables.size() <<", capacity = " << tables.capacity() << std::endl;
-//            } else {
-//                std::cout << "IN LOOP: We didn't push_back for table # : " << table_count << std::endl;
-//            }
-            if (tables.size() > 100) {
+            tables.push_back(table);
+            if (tables.size() > 10) {
                 break;
             }
         }
@@ -681,7 +704,7 @@ int process_each_data_batch(
         table_ptr result_table = result.ValueOrDie();
         std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << ", thread id = " << thread_id << std::endl;
 
-        write_parquet_file(*result_table, thread_id, source_schema_map);
+        write_parquet_file(*result_table, thread_id, source_schema_map, has_encrypt);
 
     } else if (memory_target == CppType) {
         // we just load data into cpp type in memory
@@ -699,6 +722,19 @@ int main(int argc, char** argv) {
     string file_extension = "patch";
     int thread_count_per_node = 1;
     memory_target_type memory_target = Arrow;
+    bool has_encrypt = true;
+
+    // Print Help message
+    if(argc == 2 && strcmp(argv[1], "-h") == 0) {
+        std::cout << "Parameters List" << std::endl;
+        std::cout << "1: name of DHL" << std::endl;
+        std::cout << "2: source file types" << std::endl;
+        std::cout << "3: thread counts, multiple of 6" << std::endl;
+        std::cout << "4: detination types" << std::endl;
+        std::cout << "5: turn on/off parquet encryption" << std::endl;
+        std::cout << "sqlite-to-parquet test_dhl patch|patchAttr|patchAttr340M 6|12|24|48 arrow|cppType 1|0" << std::endl;
+        return 0;
+    }
 
     if (argc > 1) {
         dhl_name = argv[1];
@@ -723,6 +759,14 @@ int main(int argc, char** argv) {
 
         if ("cppType" == target) {
             memory_target = CppType;
+        }
+    }
+
+    if (argc > 5) {
+        string encrypt = argv[5];
+
+        if ("0" == encrypt) {
+            has_encrypt = false;
         }
     }
 
@@ -753,6 +797,7 @@ int main(int argc, char** argv) {
     for (auto file_paths: file_paths_all_nodes) {
         std::cout << "Files count per node = " << file_paths.size() << std::endl;
     }
+
     // create data source db schema, as it's needed for arrow table creation
     // it's better to get schema here, because every thread need the same schema object
     string_map source_schema_map;
@@ -769,7 +814,7 @@ int main(int argc, char** argv) {
         std::cout << "This node will have thread count = " << vec_with_thread_count.size() << std::endl;
 
         for (auto files : vec_with_thread_count) {
-            std::future<int> future = std::async(std::launch::async, process_each_data_batch, files, source_schema_map, memory_target, thread_id++);
+            std::future<int> future = std::async(std::launch::async, process_each_data_batch, files, source_schema_map, memory_target, thread_id++, has_encrypt);
             futures.push_back(std::move(future));
         }
     }
