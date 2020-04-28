@@ -25,12 +25,12 @@ typedef std::string string;
 typedef std::unordered_map<std::string, std::string> string_map;
 typedef std::vector<std::string> string_vec;
 
-#define EXIT_ON_FAILURE(expr)                      \
+#define ABORT_ON_FAILURE(expr)                     \
   do {                                             \
     arrow::Status status_ = (expr);                \
     if (!status_.ok()) {                           \
       std::cerr << status_.message() << std::endl; \
-      return EXIT_FAILURE;                         \
+      abort();                                     \
     }                                              \
   } while (0);
 
@@ -479,20 +479,17 @@ int load_data_to_arrow(
         string_map const &source_schema_map,
         table_ptr* table) {
 
+    arrow::MemoryPool* pool = arrow::default_memory_pool();
+    //arrow::MemoryPool* pool = arrow::system_memory_pool();
     //arrow::MemoryPool* pool = arrow::default_memory_pool();
-    arrow::MemoryPool* pool = arrow::system_memory_pool();
-    //arrow::MemoryPool* pool = arrow::default_memory_pool();
+    //arrow::MemoryPool* pool;
+    //ABORT_ON_FAILURE(arrow::jemalloc_memory_pool(&pool));
+    //ARROW_RETURN_NOT_OK(arrow::mimalloc_memory_pool(&pool));
 
-    // Create a hashtable for each column type builder.
-    // The total count of all members of all hash tables should equal to the totol column count of the db.
-    //BIGINT Int64Builder
-    //DOUBLE DoubleBuilder
-    //BLOB BinaryBuilder
-    //FLOAT FloatingPointBuilder
-    //INTEGER IntBuilder;
 
     std::unordered_map<string, std::shared_ptr<arrow::Int64Builder>> int64_builder_map;
     std::unordered_map<string, std::shared_ptr<arrow::DoubleBuilder>> double_builder_map;
+    std::unordered_map<string, std::shared_ptr<arrow::FloatBuilder>> float_builder_map;
     std::unordered_map<string, std::shared_ptr<arrow::BinaryBuilder>> binary_builder_map;
     std::unordered_map<string, std::shared_ptr<arrow::Int32Builder>> int_builder_map;
 
@@ -500,13 +497,18 @@ int load_data_to_arrow(
         if ("BIGINT" == itr->second) {
             int64_builder_map[itr->first] = std::make_shared<arrow::Int64Builder>(arrow::int64(), pool);
 
-        } else if ("DOUBLE" == itr->second || "FLOAT" == itr->second) {
-            //auto type = std::make_shared<arrow::Decimal128Type>(ARROW_DECIMAL_PRECISION, ARROW_DECIMAL_SCALE);
+        } else if ("DOUBLE" == itr->second) {
             double_builder_map[itr->first] = std::make_shared<arrow::DoubleBuilder>(pool);
+
+        } else if ("FLOAT" == itr->second) {
+            float_builder_map[itr->first] = std::make_shared<arrow::FloatBuilder>(pool);
+
         } else if ("BLOB" == itr->second) {
             binary_builder_map[itr->first] = std::make_shared<arrow::BinaryBuilder>(pool);
+
         } else if ("INTEGER" == itr->second) {
             int_builder_map[itr->first] = std::make_shared<arrow::Int32Builder>(pool);
+
         }
     }
 
@@ -583,9 +585,13 @@ int load_data_to_arrow(
                 std::shared_ptr<arrow::Int64Builder> builder = int64_builder_map[col_name];
                 PARQUET_THROW_NOT_OK(builder->Append(sqlite3_column_int64(stmt, i)));
 
-            } else if (("DOUBLE" == col_type || "FLOAT" == col_type)
-                       && double_builder_map.find(col_name) != double_builder_map.end()) {
+            } else if (("DOUBLE" == col_type) && double_builder_map.find(col_name) != double_builder_map.end()) {
                 std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
+                double val = sqlite3_column_double(stmt, i);
+                PARQUET_THROW_NOT_OK(builder->Append(val));
+
+            } else if (("FLOAT" == col_type) && double_builder_map.find(col_name) != double_builder_map.end()) {
+                std::shared_ptr<arrow::FloatBuilder> builder = float_builder_map[col_name];
                 double val = sqlite3_column_double(stmt, i);
                 PARQUET_THROW_NOT_OK(builder->Append(val));
 
@@ -838,47 +844,47 @@ std::shared_ptr<parquet::schema::GroupNode> get_schema(string_map const &source_
 //                                                              type,parquet::ConvertedType::NONE));
 //    }
 
-//    for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
-//        string col_name = itr->first;
-//        string col_type = itr->second;
+    for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
+        string col_name = itr->first;
+        string col_type = itr->second;
+
+        if ("BIGINT" == col_type) {
+            std::cout << "schema build col = " << col_name << ", type = " << col_type << std::endl;
+            fields.push_back(parquet::schema::PrimitiveNode::Make(col_name,parquet::Repetition::REQUIRED,
+                                                                  parquet::Type::INT64,parquet::ConvertedType::NONE));
+        } else if ("FLOAT" == col_type) {
+            std::cout << "schema build col = " << col_name << ", type = " << col_type << std::endl;
+            fields.push_back(parquet::schema::PrimitiveNode::Make(col_name,parquet::Repetition::REQUIRED,
+                                                                  parquet::Type::FLOAT,parquet::ConvertedType::NONE));
+        } else if ("DOUBLE" == col_type) {
+            std::cout << "schema build col = " << col_name << ", type = " << col_type << std::endl;
+            fields.push_back(parquet::schema::PrimitiveNode::Make(col_name,parquet::Repetition::REQUIRED,
+                                                                  parquet::Type::DOUBLE,parquet::ConvertedType::NONE));
+        } else if ("BLOB" == col_type) {
+            std::cout << "schema build col = " << col_name << ", type = " << col_type << std::endl;
+            fields.push_back(parquet::schema::PrimitiveNode::Make(col_name,parquet::Repetition::REQUIRED,
+                                                                  parquet::Type::BYTE_ARRAY,parquet::ConvertedType::NONE));
+        } else if ("INTEGER" == col_type) {
+            std::cout << "schema build col = " << col_name << ", type = " << col_type << std::endl;
+            fields.push_back(parquet::schema::PrimitiveNode::Make(col_name,parquet::Repetition::REQUIRED,
+                                                                  parquet::Type::INT32,parquet::ConvertedType::NONE));
+        }
+    }
+
+//    fields.push_back(parquet::schema::PrimitiveNode::Make("Polarity",parquet::Repetition::REQUIRED,
+//            parquet::Type::INT32,parquet::ConvertedType::INT_32));
 //
-//        if ("BIGINT" == col_type) {
-//            std::cout << "schema build col = " << col_name << ", type = " << col_type << std::endl;
-//            fields.push_back(parquet::schema::PrimitiveNode::Make(col_name,parquet::Repetition::REQUIRED,
-//                                                                  parquet::Type::INT64,parquet::ConvertedType::NONE));
-//        } else if ("FLOAT" == col_type) {
-//            std::cout << "schema build col = " << col_name << ", type = " << col_type << std::endl;
-//            fields.push_back(parquet::schema::PrimitiveNode::Make(col_name,parquet::Repetition::REQUIRED,
-//                                                                  parquet::Type::FLOAT,parquet::ConvertedType::NONE));
-//        } else if ("DOUBLE" == col_type) {
-//            std::cout << "schema build col = " << col_name << ", type = " << col_type << std::endl;
-//            fields.push_back(parquet::schema::PrimitiveNode::Make(col_name,parquet::Repetition::REQUIRED,
-//                                                                  parquet::Type::DOUBLE,parquet::ConvertedType::NONE));
-//        } else if ("BLOB" == col_type) {
-//            std::cout << "schema build col = " << col_name << ", type = " << col_type << std::endl;
-//            fields.push_back(parquet::schema::PrimitiveNode::Make(col_name,parquet::Repetition::REQUIRED,
-//                                                                  parquet::Type::BYTE_ARRAY,parquet::ConvertedType::NONE));
-//        } else if ("INTEGER" == col_type) {
-//            std::cout << "schema build col = " << col_name << ", type = " << col_type << std::endl;
-//            fields.push_back(parquet::schema::PrimitiveNode::Make(col_name,parquet::Repetition::REQUIRED,
-//                                                                  parquet::Type::INT32,parquet::ConvertedType::NONE));
-//        }
-//    }
-
-    fields.push_back(parquet::schema::PrimitiveNode::Make("Polarity",parquet::Repetition::REQUIRED,
-            parquet::Type::INT32,parquet::ConvertedType::INT_32));
-
-    fields.push_back(parquet::schema::PrimitiveNode::Make("defectKey$defectID", parquet::Repetition::REQUIRED,
-            parquet::Type::INT64,parquet::ConvertedType::INT_64));
-
-    fields.push_back(parquet::schema::PrimitiveNode::Make("PatchNoise", parquet::Repetition::REQUIRED,
-            parquet::Type::FLOAT,parquet::ConvertedType::NONE));
-
-    fields.push_back(parquet::schema::PrimitiveNode::Make("MaxDim", parquet::Repetition::REQUIRED,
-            parquet::Type::DOUBLE,parquet::ConvertedType::NONE));
-
-    fields.push_back(parquet::schema::PrimitiveNode::Make("iADCVector", parquet::Repetition::REQUIRED,
-            parquet::Type::BYTE_ARRAY,parquet::ConvertedType::NONE));
+//    fields.push_back(parquet::schema::PrimitiveNode::Make("defectKey$defectID", parquet::Repetition::REQUIRED,
+//            parquet::Type::INT64,parquet::ConvertedType::INT_64));
+//
+//    fields.push_back(parquet::schema::PrimitiveNode::Make("PatchNoise", parquet::Repetition::REQUIRED,
+//            parquet::Type::FLOAT,parquet::ConvertedType::NONE));
+//
+//    fields.push_back(parquet::schema::PrimitiveNode::Make("MaxDim", parquet::Repetition::REQUIRED,
+//            parquet::Type::DOUBLE,parquet::ConvertedType::NONE));
+//
+//    fields.push_back(parquet::schema::PrimitiveNode::Make("iADCVector", parquet::Repetition::REQUIRED,
+//            parquet::Type::BYTE_ARRAY,parquet::ConvertedType::NONE));
 
 
     std::cout << "number of node vector fields = " << fields.size() << std::endl;
@@ -1003,7 +1009,7 @@ int main(int argc, char** argv) {
         std::cout << "3: thread counts, multiple of 6" << std::endl;
         std::cout << "4: detination types" << std::endl;
         std::cout << "5: turn on/off parquet encryption" << std::endl;
-        std::cout << "sqlite-to-parquet test_dhl patch|patchAttr|patchAttr340M 6|12|24|48 arrow|cppType 1|0" << std::endl;
+        std::cout << "sqlite-to-parquet test_dhl patch|patchAttr|patchAttr340M 6|12|24|48 arrow|cppType|parquet 1|0" << std::endl;
         return 0;
     }
 
@@ -1078,24 +1084,28 @@ int main(int argc, char** argv) {
 
     // file_pathes_all_nodes has NODES_COUNT file_paths.  Each file_paths has all the files on that node
     int thread_id = 1;
+    int total_row_count = 0;
     for (auto file_paths : file_paths_all_nodes) {
         auto vec_with_thread_count = split_vector(file_paths, thread_count_per_node);
 
         std::cout << "This node will have thread count = " << vec_with_thread_count.size() << std::endl;
 
         for (auto files : vec_with_thread_count) {
-            std::future<int> future = std::async(std::launch::async, process_each_data_batch, files, source_schema_map, sink_target, thread_id++, has_encrypt);
-            futures.push_back(std::move(future));
+            std::cout << "This should be called just once" << std::endl;
+            total_row_count += process_each_data_batch(files, source_schema_map, sink_target, thread_id++, has_encrypt);
+
+//            std::future<int> future = std::async(std::launch::async, process_each_data_batch, files, source_schema_map, sink_target, thread_id++, has_encrypt);
+//            futures.push_back(std::move(future));
         }
     }
 
-    std::cout << "All threads have been started...." << std::endl;
+    //std::cout << "All threads have been started...." << std::endl;
 
-    int total_row_count = 0;
-    for (auto&& future : futures) {
-        int count_per_thread = future.get();
-        total_row_count += count_per_thread;
-    }
+//    int total_row_count = 0;
+//    for (auto&& future : futures) {
+//        int count_per_thread = future.get();
+//        total_row_count += count_per_thread;
+//    }
 
     std::cout << "All threads finished their work.  The total row count is " << total_row_count << std::endl;
 

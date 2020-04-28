@@ -396,22 +396,28 @@ int load_data_to_arrow(
     //FLOAT FloatingPointBuilder
     //INTEGER IntBuilder;
 
-    std::unordered_map<std::string, std::shared_ptr<arrow::Int64Builder>> int64_builder_map;
-    std::unordered_map<std::string, std::shared_ptr<arrow::DoubleBuilder>> double_builder_map;
-    std::unordered_map<std::string, std::shared_ptr<arrow::BinaryBuilder>> binary_builder_map;
-    std::unordered_map<std::string, std::shared_ptr<arrow::Int32Builder>> int_builder_map;
+    std::unordered_map<string, std::shared_ptr<arrow::Int64Builder>> int64_builder_map;
+    std::unordered_map<string, std::shared_ptr<arrow::DoubleBuilder>> double_builder_map;
+    std::unordered_map<string, std::shared_ptr<arrow::FloatBuilder>> float_builder_map;
+    std::unordered_map<string, std::shared_ptr<arrow::BinaryBuilder>> binary_builder_map;
+    std::unordered_map<string, std::shared_ptr<arrow::Int32Builder>> int_builder_map;
 
     for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
         if ("BIGINT" == itr->second) {
             int64_builder_map[itr->first] = std::make_shared<arrow::Int64Builder>(arrow::int64(), pool);
 
-        } else if ("DOUBLE" == itr->second || "FLOAT" == itr->second) {
-            //auto type = std::make_shared<arrow::Decimal128Type>(ARROW_DECIMAL_PRECISION, ARROW_DECIMAL_SCALE);
+        } else if ("DOUBLE" == itr->second) {
             double_builder_map[itr->first] = std::make_shared<arrow::DoubleBuilder>(pool);
+
+        } else if ("FLOAT" == itr->second) {
+            float_builder_map[itr->first] = std::make_shared<arrow::FloatBuilder>(pool);
+
         } else if ("BLOB" == itr->second) {
             binary_builder_map[itr->first] = std::make_shared<arrow::BinaryBuilder>(pool);
+
         } else if ("INTEGER" == itr->second) {
             int_builder_map[itr->first] = std::make_shared<arrow::Int32Builder>(pool);
+
         }
     }
 
@@ -488,9 +494,13 @@ int load_data_to_arrow(
                 std::shared_ptr<arrow::Int64Builder> builder = int64_builder_map[col_name];
                 PARQUET_THROW_NOT_OK(builder->Append(sqlite3_column_int64(stmt, i)));
 
-            } else if (("DOUBLE" == col_type || "FLOAT" == col_type)
-                       && double_builder_map.find(col_name) != double_builder_map.end()) {
+            } else if (("DOUBLE" == col_type) && double_builder_map.find(col_name) != double_builder_map.end()) {
                 std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
+                double val = sqlite3_column_double(stmt, i);
+                PARQUET_THROW_NOT_OK(builder->Append(val));
+
+            } else if (("FLOAT" == col_type) && double_builder_map.find(col_name) != double_builder_map.end()) {
+                std::shared_ptr<arrow::FloatBuilder> builder = float_builder_map[col_name];
                 double val = sqlite3_column_double(stmt, i);
                 PARQUET_THROW_NOT_OK(builder->Append(val));
 
