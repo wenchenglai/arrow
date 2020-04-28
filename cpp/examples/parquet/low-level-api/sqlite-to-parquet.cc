@@ -479,7 +479,7 @@ int load_data_to_arrow(
         string_map const &source_schema_map,
         table_ptr* table) {
 
-    arrow::MemoryPool* pool = arrow::default_memory_pool();
+    //arrow::MemoryPool* pool = arrow::default_memory_pool();
 
     // Create a hashtable for each column type builder.
     // The total count of all members of all hash tables should equal to the totol column count of the db.
@@ -496,15 +496,15 @@ int load_data_to_arrow(
 
     for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
         if ("BIGINT" == itr->second) {
-            int64_builder_map[itr->first] = std::make_shared<arrow::Int64Builder>(arrow::int64(), pool);
+            int64_builder_map[itr->first] = std::make_shared<arrow::Int64Builder>(arrow::int64(), arrow::default_memory_pool());
 
         } else if ("DOUBLE" == itr->second || "FLOAT" == itr->second) {
             //auto type = std::make_shared<arrow::Decimal128Type>(ARROW_DECIMAL_PRECISION, ARROW_DECIMAL_SCALE);
-            double_builder_map[itr->first] = std::make_shared<arrow::DoubleBuilder>(pool);
+            double_builder_map[itr->first] = std::make_shared<arrow::DoubleBuilder>(arrow::default_memory_pool());
         } else if ("BLOB" == itr->second) {
-            binary_builder_map[itr->first] = std::make_shared<arrow::BinaryBuilder>(pool);
+            binary_builder_map[itr->first] = std::make_shared<arrow::BinaryBuilder>(arrow::default_memory_pool());
         } else if ("INTEGER" == itr->second) {
-            int_builder_map[itr->first] = std::make_shared<arrow::Int32Builder>(pool);
+            int_builder_map[itr->first] = std::make_shared<arrow::Int32Builder>(arrow::default_memory_pool());
         }
     }
 
@@ -914,12 +914,12 @@ int process_each_data_batch(
 //                std::cout << "**** File has zero records: " << file_path << std::endl;
 //            }
 
-            //std::cout << "IN LOOP: Before push_back, we have total rows:" << sum_num_rows_per_thread << ", table_count = " << table_count << ", current rows = " << current_rows << std::endl;
+            std::cout << "IN LOOP: Before push_back, we have total rows:" << sum_num_rows_per_thread << ", table_count = " << table_count << ", current rows = " << current_rows << std::endl;
 
             tables.push_back(table);
-            if (tables.size() > 10) {
-                break;
-            }
+//            if (tables.size() > 10) {
+//                break;
+//            }
         }
         //std::cout << "Total tables processed:  " << table_count << std::endl;
 
