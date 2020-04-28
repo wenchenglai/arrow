@@ -144,7 +144,7 @@ string_vec get_all_files_path_per_node(string dhl_name, string file_extension, i
 
     // TODO strings for different machine, the strings is one node ONLY
     // for vi3-0009
-    //dhl_path = "/Volumes/remoteStorage/" + dhl_name;
+    dhl_path = "/Volumes/remoteStorage/" + dhl_name;
     // for windows Linux
     //dhl_path = "/home/wen/github/arrow/data/test_dirs/" + dhl_name;
 
@@ -480,6 +480,8 @@ int load_data_to_arrow(
         table_ptr* table) {
 
     //arrow::MemoryPool* pool = arrow::default_memory_pool();
+    arrow::MemoryPool* pool = arrow::system_memory_pool();
+    //arrow::MemoryPool* pool = arrow::default_memory_pool();
 
     // Create a hashtable for each column type builder.
     // The total count of all members of all hash tables should equal to the totol column count of the db.
@@ -496,15 +498,15 @@ int load_data_to_arrow(
 
     for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
         if ("BIGINT" == itr->second) {
-            int64_builder_map[itr->first] = std::make_shared<arrow::Int64Builder>(arrow::int64(), arrow::default_memory_pool());
+            int64_builder_map[itr->first] = std::make_shared<arrow::Int64Builder>(arrow::int64(), pool);
 
         } else if ("DOUBLE" == itr->second || "FLOAT" == itr->second) {
             //auto type = std::make_shared<arrow::Decimal128Type>(ARROW_DECIMAL_PRECISION, ARROW_DECIMAL_SCALE);
-            double_builder_map[itr->first] = std::make_shared<arrow::DoubleBuilder>(arrow::default_memory_pool());
+            double_builder_map[itr->first] = std::make_shared<arrow::DoubleBuilder>(pool);
         } else if ("BLOB" == itr->second) {
-            binary_builder_map[itr->first] = std::make_shared<arrow::BinaryBuilder>(arrow::default_memory_pool());
+            binary_builder_map[itr->first] = std::make_shared<arrow::BinaryBuilder>(pool);
         } else if ("INTEGER" == itr->second) {
-            int_builder_map[itr->first] = std::make_shared<arrow::Int32Builder>(arrow::default_memory_pool());
+            int_builder_map[itr->first] = std::make_shared<arrow::Int32Builder>(pool);
         }
     }
 
