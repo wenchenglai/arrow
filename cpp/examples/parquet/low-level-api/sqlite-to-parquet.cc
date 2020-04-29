@@ -1098,6 +1098,7 @@ int load_data_to_arrow_v2(
 /* ################################################### */
 int load_data_to_parquet(string file_path,
         string_map const &source_schema_map,
+        std::shared_ptr<parquet::schema::GroupNode> const &parq_schema,
         parquet::RowGroupWriter* rg_writer,
         std::vector<int64_t> &buffered_values_estimate) {
 
@@ -1162,44 +1163,47 @@ int load_data_to_parquet(string file_path,
         return EXIT_FAILURE;
     }
 
-    std::cout << "query = " << query << std::endl;
-
     int num_columns = sqlite3_column_count(stmt);
 
+    int row_count = 0;
     while ((bResult = sqlite3_step(stmt)) == SQLITE_ROW) {
-        for (int col_id = 0; col_id < num_columns; col_id++) {
-            string col_name = sqlite3_column_name(stmt, col_id);
-            string col_type = sqlite3_column_decltype(stmt, col_id);
+        row_count++;
+        for (int i = 0; i < num_columns; i++) {
+            string col_name = sqlite3_column_name(stmt, i);
+            string col_type = sqlite3_column_decltype(stmt, i);
 
-            std::cout << col_id << " ";
+            int col_id = parq_schema->FieldIndex(col_name);
+
+            //std::cout << col_id << " ";
+
             if ("BIGINT" == col_type) {
-                int64_t val = sqlite3_column_int64(stmt, col_id);
-                std::cout << "column name = " << col_name << ", type = " << col_type << ", val = " << val << std::endl;
+                int64_t val = sqlite3_column_int64(stmt, i);
+                //std::cout << "column name = " << col_name << ", type = " << col_type << ", val = " << val << std::endl;
                 parquet::Int64Writer* int64_writer = static_cast<parquet::Int64Writer*>(rg_writer->column(col_id));
                 int64_writer->WriteBatch(1, nullptr, nullptr, &val);
                 buffered_values_estimate[col_id] = int64_writer->EstimatedBufferedValueBytes();
 
             } else if ("FLOAT" == col_type) {
-                float val = sqlite3_column_double(stmt, col_id);
-                std::cout << "column name = " << col_name << ", type = " << col_type << ", val = " << val << std::endl;
+                float val = sqlite3_column_double(stmt, i);
+                //std::cout << "column name = " << col_name << ", type = " << col_type << ", val = " << val << std::endl;
                 parquet::FloatWriter* float_writer = static_cast<parquet::FloatWriter*>(rg_writer->column(col_id));
                 float_writer->WriteBatch(1, nullptr, nullptr, &val);
                 buffered_values_estimate[col_id] = float_writer->EstimatedBufferedValueBytes();
 
 
             } else if ("DOUBLE" == col_type) {
-                double val = sqlite3_column_double(stmt, col_id);
-                std::cout << "column name = " << col_name << ", type = " << col_type << ", val = " << val << std::endl;
+                double val = sqlite3_column_double(stmt, i);
+                //std::cout << "column name = " << col_name << ", type = " << col_type << ", val = " << val << std::endl;
                 parquet::DoubleWriter* double_writer = static_cast<parquet::DoubleWriter*>(rg_writer->column(col_id));
                 double_writer->WriteBatch(1, nullptr, nullptr, &val);
                 buffered_values_estimate[col_id] = double_writer->EstimatedBufferedValueBytes();
 
 
             } else if ("BLOB" == col_type) {
-                int blob_size = sqlite3_column_bytes(stmt, col_id);
-                std::cout << "column name = " << col_name << ", type = " << col_type << ", val = " << blob_size << std::endl;
+                int blob_size = sqlite3_column_bytes(stmt, i);
+                //std::cout << "column name = " << col_name << ", type = " << col_type << ", val = " << blob_size << std::endl;
                 if (blob_size > 0) {
-                    const uint8_t *pBuffer = reinterpret_cast<const uint8_t*>(sqlite3_column_blob(stmt, col_id));
+                    const uint8_t *pBuffer = reinterpret_cast<const uint8_t*>(sqlite3_column_blob(stmt, i));
                     parquet::ByteArrayWriter* ba_writer = static_cast<parquet::ByteArrayWriter*>(rg_writer->column(col_id));
                     parquet::ByteArray ba_value;
                     ba_value.ptr = pBuffer;
@@ -1223,8 +1227,8 @@ int load_data_to_parquet(string file_path,
 
                 }
             } else if ("INTEGER" == col_type) {
-                int val = sqlite3_column_int(stmt, col_id);
-                std::cout << "column name = " << col_name << ", type = " << col_type << ", val = " << val << std::endl;
+                int val = sqlite3_column_int(stmt, i);
+                //std::cout << "column name = " << col_name << ", type = " << col_type << ", val = " << val << std::endl;
                 parquet::Int32Writer* int32_writer = static_cast<parquet::Int32Writer*>(rg_writer->column(col_id));
                 int32_writer->WriteBatch(1, nullptr, nullptr, &val);
                 buffered_values_estimate[col_id] = int32_writer->EstimatedBufferedValueBytes();
@@ -1235,7 +1239,7 @@ int load_data_to_parquet(string file_path,
     sqlite3_finalize(stmt);
     sqlite3_close(pDb);
 
-    return 1;
+    return row_count;
 }
 
 std::shared_ptr<parquet::schema::GroupNode> get_schema_for_parquet(string_map const &source_schema_map) {
@@ -1373,9 +1377,25 @@ int process_each_data_batch(
         std::shared_ptr<FileClass> out_file;
         PARQUET_ASSIGN_OR_THROW(out_file, FileClass::Open(std::to_string(thread_id) + PARQUET));
 
-        parquet::WriterProperties::Builder builder;
-        builder.compression(parquet::Compression::SNAPPY);
-        std::shared_ptr<parquet::WriterProperties> props = builder.build();
+        parquet::WriterProperties::Builder wp_builder;
+
+        if (has_encrypt) {
+            std::map<string, std::shared_ptr<parquet::ColumnEncryptionProperties>> encryption_cols;
+
+            // we always encrypt all columns
+            for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
+                string column_name = itr->first;
+                parquet::ColumnEncryptionProperties::Builder encryption_col_builder(column_name);
+                encryption_col_builder.key(col_encryp_key)->key_id(col_encryp_key_id);
+                encryption_cols[column_name] = encryption_col_builder.build();
+            }
+
+            parquet::FileEncryptionProperties::Builder file_encryption_builder(footer_encryp_key);
+            wp_builder.encryption(file_encryption_builder.footer_key_metadata(footer_encryp_key_id)->encrypted_columns(encryption_cols)->build());
+        }
+
+        wp_builder.compression(parquet::Compression::SNAPPY);
+        std::shared_ptr<parquet::WriterProperties> props = wp_builder.build();
 
         std::shared_ptr<parquet::schema::GroupNode> schema = get_schema_for_parquet(source_schema_map);
 
@@ -1402,9 +1422,8 @@ int process_each_data_batch(
                 std::fill(buffered_values_estimate.begin(), buffered_values_estimate.end(), 0);
                 rg_writer = file_writer->AppendBufferedRowGroup();
             }
-            std::cout << "*******" << std::endl;
-            load_data_to_parquet(file_path, source_schema_map, rg_writer, buffered_values_estimate);
-            std::cout << "#######" << std::endl;
+
+            sum_num_rows_per_thread += load_data_to_parquet(file_path, source_schema_map, schema, rg_writer, buffered_values_estimate);
         }
 
         // Close the RowGroupWriter
