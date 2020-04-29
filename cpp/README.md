@@ -64,6 +64,19 @@ If there are missing so file, you can simply copy them from the installation fol
 
 "so" files that you should include are libssl and libcrypt.
 
+## Deploy to VIVA
+
+1. Create symbolic links to necessary libraries:
+libarrow.so.100.0.0 is the root, real library.  Create two symbolic links as below
+
+ln -s libarrow.so.100.0.0 libarrow.so.100
+ln -s libarrow.so.100 libarrow.so
+
+libparquet.so.100.0.0 is the root, real library.  Create two symbolic links as below
+
+ln -s libparquet.so.100.0.0 libparquet.so.100
+ln -s libparquet.so.100 libparquet.so
+
 ## Test on ViX
 
 Copy the binary to vi3-0009 user/release folder
