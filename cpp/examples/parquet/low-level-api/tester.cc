@@ -16,6 +16,7 @@
 // under the License.
 
 #include <cstdint>
+#include <chrono>
 #include <iostream>
 #include <vector>
 
