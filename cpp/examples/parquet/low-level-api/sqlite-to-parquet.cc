@@ -17,6 +17,7 @@
 
 #include "arrow/util/decimal.h"
 #include "arrow/testing/util.h"
+#include "arrow/status.h"
 
 #include "sqlite3.h"
 
@@ -24,6 +25,12 @@ typedef std::shared_ptr<arrow::Table> table_ptr;
 typedef std::string string;
 typedef std::unordered_map<std::string, std::string> string_map;
 typedef std::vector<std::string> string_vec;
+
+using arrow::DoubleBuilder;
+using arrow::FloatBuilder;
+using arrow::Int64Builder;
+using arrow::Int32Builder;
+using arrow::BinaryBuilder;
 
 #define ABORT_ON_FAILURE(expr)                     \
   do {                                             \
@@ -438,38 +445,55 @@ int load_data_to_cpp_type(string file_path) {
 int load_data_to_arrow(
         string file_path,
         string_map const &source_schema_map,
-        table_ptr* table) {
+        table_ptr* table,
+        int reserve_size) {
 
     arrow::MemoryPool* pool = arrow::default_memory_pool();
-    //arrow::MemoryPool* pool = arrow::system_memory_pool();
-    //arrow::MemoryPool* pool = arrow::default_memory_pool();
-    //arrow::MemoryPool* pool;
-    //ABORT_ON_FAILURE(arrow::jemalloc_memory_pool(&pool));
-    //ARROW_RETURN_NOT_OK(arrow::mimalloc_memory_pool(&pool));
-
 
     std::unordered_map<string, std::shared_ptr<arrow::Int64Builder>> int64_builder_map;
     std::unordered_map<string, std::shared_ptr<arrow::DoubleBuilder>> double_builder_map;
     std::unordered_map<string, std::shared_ptr<arrow::FloatBuilder>> float_builder_map;
     std::unordered_map<string, std::shared_ptr<arrow::BinaryBuilder>> binary_builder_map;
-    std::unordered_map<string, std::shared_ptr<arrow::Int32Builder>> int_builder_map;
+    std::unordered_map<string, std::shared_ptr<arrow::Int32Builder>> int32_builder_map;
 
     for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
-        if ("BIGINT" == itr->second) {
-            int64_builder_map[itr->first] = std::make_shared<arrow::Int64Builder>(arrow::int64(), pool);
+        string col_name = itr->first;
+        string col_type = itr->second;
 
-        } else if ("DOUBLE" == itr->second) {
-            double_builder_map[itr->first] = std::make_shared<arrow::DoubleBuilder>(pool);
+        if ("DOUBLE" == col_type) {
+            std::shared_ptr<DoubleBuilder> builder = std::make_shared<DoubleBuilder>(arrow::float64(), pool);
+            if (reserve_size > 0) {
+                PARQUET_THROW_NOT_OK(builder->Reserve(reserve_size));
+            }
+            double_builder_map[col_name] = builder;
 
-        } else if ("FLOAT" == itr->second) {
-            float_builder_map[itr->first] = std::make_shared<arrow::FloatBuilder>(pool);
+        } else if ("FLOAT" == col_type) {
+            std::shared_ptr<FloatBuilder> builder = std::make_shared<FloatBuilder>(arrow::float32(), pool);
+            if (reserve_size > 0) {
+                PARQUET_THROW_NOT_OK(builder->Reserve(reserve_size));
+            }
+            float_builder_map[col_name] = builder;
 
-        } else if ("BLOB" == itr->second) {
-            binary_builder_map[itr->first] = std::make_shared<arrow::BinaryBuilder>(pool);
+        } else if ("BIGINT" == col_type) {
+            std::shared_ptr<Int64Builder> builder = std::make_shared<Int64Builder>(arrow::int64(), pool);
+            if (reserve_size > 0) {
+                PARQUET_THROW_NOT_OK(builder->Reserve(reserve_size));
+            }
+            int64_builder_map[col_name] = builder;
 
-        } else if ("INTEGER" == itr->second) {
-            int_builder_map[itr->first] = std::make_shared<arrow::Int32Builder>(pool);
+        } else if ("INTEGER" == col_type) {
+            std::shared_ptr<Int32Builder> builder = std::make_shared<Int32Builder>(arrow::int32(), pool);
+            if (reserve_size > 0) {
+                PARQUET_THROW_NOT_OK(builder->Reserve(reserve_size));
+            }
+            int32_builder_map[col_name] = builder;
 
+        } else if ("BLOB" == col_type) {
+            std::shared_ptr<BinaryBuilder> builder = std::make_shared<BinaryBuilder>(arrow::binary(), pool);
+            if (reserve_size > 0) {
+                PARQUET_THROW_NOT_OK(builder->Reserve(reserve_size));
+            }
+            binary_builder_map[col_name] = builder;
         }
     }
 
@@ -542,23 +566,22 @@ int load_data_to_arrow(
         for (int i = 0; i < col_count; i++) {
             string col_name = sqlite3_column_name(stmt, i);
             string col_type = sqlite3_column_decltype(stmt, i);
-            //std::cout << i << " col_name = " << col_name << ", col_type = " << col_type << std::endl;
 
-            if ("BIGINT" == col_type && int64_builder_map.find(col_name) != int64_builder_map.end()) {
+            if ("BIGINT" == col_type) {
                 std::shared_ptr<arrow::Int64Builder> builder = int64_builder_map[col_name];
                 PARQUET_THROW_NOT_OK(builder->Append(sqlite3_column_int64(stmt, i)));
 
-            } else if (("DOUBLE" == col_type) && double_builder_map.find(col_name) != double_builder_map.end()) {
+            } else if ("DOUBLE" == col_type) {
                 std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
                 double val = sqlite3_column_double(stmt, i);
                 PARQUET_THROW_NOT_OK(builder->Append(val));
 
-            } else if (("FLOAT" == col_type) && float_builder_map.find(col_name) != float_builder_map.end()) {
+            } else if ("FLOAT" == col_type) {
                 std::shared_ptr<arrow::FloatBuilder> builder = float_builder_map[col_name];
                 float val = sqlite3_column_double(stmt, i);
                 PARQUET_THROW_NOT_OK(builder->Append(val));
 
-            } else if ("BLOB" == col_type && binary_builder_map.find(col_name) != binary_builder_map.end()) {
+            } else if ("BLOB" == col_type) {
                 int blob_size = sqlite3_column_bytes(stmt, i);
 
                 const uint8_t *pBuffer;
@@ -576,8 +599,8 @@ int load_data_to_arrow(
 
                 std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
                 PARQUET_THROW_NOT_OK(builder->Append(pBuffer, blob_size));
-            } else if ("INTEGER" == col_type && int_builder_map.find(col_name) != int_builder_map.end()) {
-                std::shared_ptr<arrow::Int32Builder> builder = int_builder_map[col_name];
+            } else if ("INTEGER" == col_type) {
+                std::shared_ptr<arrow::Int32Builder> builder = int32_builder_map[col_name];
                 PARQUET_THROW_NOT_OK(builder->Append(sqlite3_column_int(stmt, i)));
             }
         }
@@ -607,34 +630,29 @@ int load_data_to_arrow(
         string col_type = itr->second;
 
         std::shared_ptr<arrow::Array> array;
-        if ("BIGINT" == col_type && int64_builder_map.find(col_name) != int64_builder_map.end()) {
-            schema_vector.emplace_back(arrow::field(col_name, arrow::int64()));
-
-            std::shared_ptr<arrow::Int64Builder> builder = int64_builder_map[col_name];
-            PARQUET_THROW_NOT_OK(builder->Finish(&array));
-
-        } else if ("DOUBLE" == col_type && double_builder_map.find(col_name) != double_builder_map.end()) {
+        if ("DOUBLE" == col_type) {
             schema_vector.emplace_back(arrow::field(col_name, arrow::float64()));
-
-            std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
+            std::shared_ptr<DoubleBuilder> builder = double_builder_map[col_name];
             PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
-        } else if ("FLOAT" == col_type && float_builder_map.find(col_name) != float_builder_map.end()) {
+        } else if ("FLOAT" == col_type) {
             schema_vector.emplace_back(arrow::field(col_name, arrow::float32()));
-
-            std::shared_ptr<arrow::FloatBuilder> builder = float_builder_map[col_name];
+            std::shared_ptr<FloatBuilder> builder = float_builder_map[col_name];
             PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
-        } else if ("BLOB" == col_type && binary_builder_map.find(col_name) != binary_builder_map.end()) {
-            schema_vector.emplace_back(arrow::field(col_name, arrow::binary()));
-
-            std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
+        } else if ("BIGINT" == col_type) {
+            schema_vector.emplace_back(arrow::field(col_name, arrow::int64()));
+            std::shared_ptr<Int64Builder> builder = int64_builder_map[col_name];
             PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
-        } else if ("INTEGER" == col_type && int_builder_map.find(col_name) != int_builder_map.end()) {
+        } else if ("INTEGER" == col_type) {
             schema_vector.emplace_back(arrow::field(col_name, arrow::int32()));
+            std::shared_ptr<Int32Builder> builder = int32_builder_map[col_name];
+            PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
-            std::shared_ptr<arrow::Int32Builder> builder = int_builder_map[col_name];
+        } else if ("BLOB" == col_type) {
+            schema_vector.emplace_back(arrow::field(col_name, arrow::binary()));
+            std::shared_ptr<BinaryBuilder> builder = binary_builder_map[col_name];
             PARQUET_THROW_NOT_OK(builder->Finish(&array));
         }
 
@@ -1457,7 +1475,7 @@ int process_each_data_batch(
         // individual db file will be process in this loop
         for (auto file_path : file_paths) {
             table_ptr table;
-            load_data_to_arrow_v2_create_vector_first(file_path, source_schema_map, &table);
+            load_data_to_arrow(file_path, source_schema_map, &table, 10000);
 
             if (table == nullptr) {
                 std::cout << "Null table, possibly due to zero record SQLite file" << std::endl;
