@@ -190,7 +190,7 @@ arrow::Status print_binary_builder_summary(std::shared_ptr<BinaryBuilder> builde
     return arrow::Status::OK();
 }
 
-arrow::Status dynamic_columns_load(table_ptr* table, int row_count, string_map const &source_schema_map, memory_pool_type pool_type) {
+arrow::Status dynamic_columns_load(table_ptr* table, int row_count, int reserve_size, string_map const &source_schema_map, memory_pool_type pool_type) {
     arrow::MemoryPool* pool = get_memory_pool(pool_type);
 
     std::unordered_map<string, std::shared_ptr<DoubleBuilder>> double_builder_map;
@@ -204,19 +204,39 @@ arrow::Status dynamic_columns_load(table_ptr* table, int row_count, string_map c
         string col_type = itr->second;
 
         if ("DOUBLE" == col_type) {
-            double_builder_map[col_name] = std::make_shared<DoubleBuilder>(arrow::float64(), pool);
+            std::shared_ptr<DoubleBuilder> builder = std::make_shared<DoubleBuilder>(arrow::float64(), pool);
+            if (reserve_size > 0) {
+                ARROW_RETURN_NOT_OK(builder->Reserve(reserve_size));
+            }
+            double_builder_map[col_name] = builder;
 
         } else if ("FLOAT" == col_type) {
-            float_builder_map[col_name] = std::make_shared<FloatBuilder>(arrow::float32(), pool);
+            std::shared_ptr<FloatBuilder> builder = std::make_shared<FloatBuilder>(arrow::float32(), pool);
+            if (reserve_size > 0) {
+                ARROW_RETURN_NOT_OK(builder->Reserve(reserve_size));
+            }
+            float_builder_map[col_name] = builder;
 
         } else if ("BIGINT" == col_type) {
-            int64_builder_map[col_name] = std::make_shared<Int64Builder>(arrow::int64(), pool);
+            std::shared_ptr<Int64Builder> builder = std::make_shared<Int64Builder>(arrow::int64(), pool);
+            if (reserve_size > 0) {
+                ARROW_RETURN_NOT_OK(builder->Reserve(reserve_size));
+            }
+            int64_builder_map[col_name] = builder;
 
         } else if ("INTEGER" == col_type) {
-            int32_builder_map[col_name] = std::make_shared<Int32Builder>(arrow::int32(), pool);
+            std::shared_ptr<Int32Builder> builder = std::make_shared<Int32Builder>(arrow::int32(), pool);
+            if (reserve_size > 0) {
+                ARROW_RETURN_NOT_OK(builder->Reserve(reserve_size));
+            }
+            int32_builder_map[col_name] = builder;
 
         } else if ("BLOB" == col_type) {
-            binary_builder_map[col_name] = std::make_shared<BinaryBuilder>(arrow::binary(), pool);
+            std::shared_ptr<BinaryBuilder> builder = std::make_shared<BinaryBuilder>(arrow::binary(), pool);
+            if (reserve_size > 0) {
+                ARROW_RETURN_NOT_OK(builder->Reserve(reserve_size));
+            }
+            binary_builder_map[col_name] = builder;
         }
     }
 
@@ -326,6 +346,7 @@ arrow::Status dynamic_columns_load(table_ptr* table, int row_count, string_map c
 int main(int argc, char** argv) {
     int table_count = 10;
     int row_count = 50;
+    int reserve_size = 0;
     memory_pool_type pool_type = JePool;
 
     if (argc > 1) {
@@ -337,7 +358,11 @@ int main(int argc, char** argv) {
     }
 
     if (argc > 3) {
-        string pool_name = argv[3];
+        reserve_size = atoi(argv[3]);
+    }
+
+    if (argc > 4) {
+        string pool_name = argv[4];
 
         if ("system" == pool_name) {
             pool_type = SystemPool;
@@ -378,7 +403,7 @@ int main(int argc, char** argv) {
 
         //EXIT_ON_FAILURE(VectorToColumnarTable(rows, &table, row_count / 10));
 
-        EXIT_ON_FAILURE(dynamic_columns_load(&table, row_count, source_schema_map, pool_type));
+        EXIT_ON_FAILURE(dynamic_columns_load(&table, row_count, reserve_size, source_schema_map, pool_type));
 
         std::cout << "Table #" << i + 1 << " loaded rows = " << table->num_rows() << ". Memory alloc:" << pool->bytes_allocated() << ", max: " << pool->max_memory() << std::endl;
         tables.push_back(table);
