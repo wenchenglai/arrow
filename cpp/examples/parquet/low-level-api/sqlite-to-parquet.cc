@@ -184,7 +184,7 @@ int get_all_files_path(string dhl_name, string file_extension, std::vector<strin
 }
 
 // print SQLite Data Source Schema
-void print_schema(string_map const &source_schema_map) {
+void print_dhl_sqlite_schema(string_map const &source_schema_map) {
     std::cout << "******** Schema ******** = " << std::endl;
     int i = 1;
     for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {

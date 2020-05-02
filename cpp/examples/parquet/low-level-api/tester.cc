@@ -21,11 +21,14 @@
 
 #include <arrow/api.h>
 
-using arrow::DoubleBuilder;
-using arrow::Int64Builder;
-using arrow::ListBuilder;
+#include "sqlite_util.h"
 
-typedef std::shared_ptr<arrow::Table> table_ptr;
+using arrow::DoubleBuilder;
+using arrow::FloatBuilder;
+using arrow::Int64Builder;
+using arrow::Int32Builder;
+using arrow::BinaryBuilder;
+using arrow::ListBuilder;
 
 // While we want to use columnar data structures to build efficient operations, we
 // often receive data in a row-wise fashion from other systems. In the following,
@@ -112,6 +115,181 @@ arrow::Status VectorToColumnarTable(const std::vector<struct data_row>& rows, st
     return arrow::Status::OK();
 }
 
+template<typename T>
+arrow::Status print_builder_summary(T builder) {
+    int length = builder->length();
+    string type = builder->type()->ToString();
+
+    std::cout << "Type: " << type << ", cap: " << builder->capacity() << ", length: " << length
+    << ", children: " << builder->num_children() << std::endl;
+
+    for (int i = 0; i < length; i++) {
+        std::cout << i << " value = " << builder->GetValue(1) << std::endl;
+    }
+
+    return arrow::Status::OK();
+}
+
+arrow::Status print_binary_builder_summary(std::shared_ptr<BinaryBuilder> builder) {
+    int length = builder->length();
+    string type = builder->type()->ToString();
+
+    std::cout << "Type: " << type << ", cap: " << builder->capacity() << ", length: " << length
+              << ", children: " << builder->num_children() << std::endl;
+
+    for (int i = 0; i < length; i++) {
+        arrow::util::string_view view = builder->GetView(i);
+
+        int j = 0;
+        const uint8_t* bbb = builder->GetValue(i, &j);
+
+        std::cout << i << std::endl;
+        std::cout << "value_data: value = " << builder->value_data() << ", capacity = " << builder->value_data_capacity() << std::endl;
+        std::cout << "GetValue: value = " << *bbb << ", and j = " << j << std::endl;
+        std::cout << "string view: value = " << view << std::endl;
+        std::cout << "string view[0]: value = " << view[0] << std::endl;
+        std::cout << "string view[1]: value = " << view[1] << std::endl;
+        std::cout << "string view[2]: value = " << view[2] << std::endl;
+
+        std::cout << "**************" << std::endl;
+    }
+
+    return arrow::Status::OK();
+}
+
+arrow::Status dynamic_columns_load(std::shared_ptr<arrow::Table>* table, int row_count, string_map const &source_schema_map) {
+    arrow::MemoryPool* pool = arrow::default_memory_pool();
+
+    std::unordered_map<string, std::shared_ptr<DoubleBuilder>> double_builder_map;
+    std::unordered_map<string, std::shared_ptr<FloatBuilder>> float_builder_map;
+    std::unordered_map<string, std::shared_ptr<Int64Builder>> int64_builder_map;
+    std::unordered_map<string, std::shared_ptr<Int32Builder>> int32_builder_map;
+    std::unordered_map<string, std::shared_ptr<BinaryBuilder>> binary_builder_map;
+
+    for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
+        string col_name = itr->first;
+        string col_type = itr->second;
+
+        if ("DOUBLE" == col_type) {
+            double_builder_map[col_name] = std::make_shared<DoubleBuilder>(arrow::float64(), pool);
+
+        } else if ("FLOAT" == col_type) {
+            float_builder_map[col_name] = std::make_shared<FloatBuilder>(arrow::float32(), pool);
+
+        } else if ("BIGINT" == col_type) {
+            int64_builder_map[col_name] = std::make_shared<Int64Builder>(arrow::int64(), pool);
+
+        } else if ("INTEGER" == col_type) {
+            int32_builder_map[col_name] = std::make_shared<Int32Builder>(arrow::int32(), pool);
+
+        } else if ("BLOB" == col_type) {
+            binary_builder_map[col_name] = std::make_shared<BinaryBuilder>(arrow::binary(), pool);
+        }
+    }
+
+//    std::cout << "Size of double_builder_map = " << double_builder_map.size() << std::endl;
+//    std::cout << "Size of float_builder_map = " << float_builder_map.size() << std::endl;
+//    std::cout << "Size of int64_builder_map = " << int64_builder_map.size() << std::endl;
+//    std::cout << "Size of int32_builder_map = " << int32_builder_map.size() << std::endl;
+//    std::cout << "Size of binary_builder_map = " << binary_builder_map.size() << std::endl;
+
+//    BinaryBuilder bu;
+//
+//
+//
+//    std::shared_ptr<BinaryBuilder> builder = binary_builder_map["iADCVector"];
+//    ARROW_RETURN_NOT_OK(builder->Reserve(1000));
+//    print_builder_summary(builder);
+//
+//    int blob_size = 2;
+//    uint8_t local_buffer[blob_size];
+//    local_buffer[0] = 65;
+//    local_buffer[1] = 66;
+//    ARROW_RETURN_NOT_OK(builder->Append(local_buffer, blob_size));
+//    print_builder_summary(builder);
+//
+//    int blob_size2 = 4;
+//    uint8_t local_buffer2[blob_size2];
+//    local_buffer2[0] = 67;
+//    local_buffer2[1] = 68;
+//    local_buffer2[2] = 69;
+//    local_buffer2[3] = 70;
+//    ARROW_RETURN_NOT_OK(builder->Append(local_buffer2, blob_size2));
+//    print_builder_summary(builder);
+
+    for (int i = 0; i < row_count; i++) {
+        for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
+            string col_name = itr->first;
+            string col_type = itr->second;
+
+            if ("DOUBLE" == col_type) {
+                std::shared_ptr<DoubleBuilder> builder = double_builder_map[col_name];
+                ARROW_RETURN_NOT_OK(builder->Append(64));
+
+            } else if ("FLOAT" == col_type) {
+                std::shared_ptr<FloatBuilder> builder = float_builder_map[col_name];
+                ARROW_RETURN_NOT_OK(builder->Append(64));
+
+            } else if ("BIGINT" == col_type) {
+                std::shared_ptr<Int64Builder> builder = int64_builder_map[col_name];
+                ARROW_RETURN_NOT_OK(builder->Append(64));
+
+            } else if ("INTEGER" == col_type ) {
+                std::shared_ptr<Int32Builder> builder = int32_builder_map[col_name];
+                ARROW_RETURN_NOT_OK(builder->Append(64));
+
+            } else if ("BLOB" == col_type) {
+                int blob_size = 1;
+                uint8_t local_buffer[blob_size];
+                local_buffer[0] = 64;
+                std::shared_ptr<BinaryBuilder> builder = binary_builder_map[col_name];
+                ARROW_RETURN_NOT_OK(builder->Append(local_buffer, blob_size));
+            }
+        }
+    }
+
+    std::vector<std::shared_ptr<arrow::Array>> arrays;
+    std::vector<std::shared_ptr<arrow::Field>> schema_vector;
+    for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
+        string col_name = itr->first;
+        string col_type = itr->second;
+
+        std::shared_ptr<arrow::Array> array;
+        if ("DOUBLE" == col_type) {
+            schema_vector.emplace_back(arrow::field(col_name, arrow::float64()));
+            std::shared_ptr<DoubleBuilder> builder = double_builder_map[col_name];
+            ARROW_RETURN_NOT_OK(builder->Finish(&array));
+
+        } else if ("FLOAT" == col_type) {
+            schema_vector.emplace_back(arrow::field(col_name, arrow::float32()));
+            std::shared_ptr<FloatBuilder> builder = float_builder_map[col_name];
+            ARROW_RETURN_NOT_OK(builder->Finish(&array));
+
+        } else if ("BIGINT" == col_type) {
+            schema_vector.emplace_back(arrow::field(col_name, arrow::int64()));
+            std::shared_ptr<Int64Builder> builder = int64_builder_map[col_name];
+            ARROW_RETURN_NOT_OK(builder->Finish(&array));
+
+        } else if ("INTEGER" == col_type) {
+            schema_vector.emplace_back(arrow::field(col_name, arrow::int32()));
+            std::shared_ptr<Int32Builder> builder = int32_builder_map[col_name];
+            ARROW_RETURN_NOT_OK(builder->Finish(&array));
+
+        } else if ("BLOB" == col_type) {
+            schema_vector.emplace_back(arrow::field(col_name, arrow::binary()));
+            std::shared_ptr<BinaryBuilder> builder = binary_builder_map[col_name];
+            ARROW_RETURN_NOT_OK(builder->Finish(&array));
+        }
+
+        arrays.emplace_back(array);
+    }
+
+    auto schema = std::make_shared<arrow::Schema>(schema_vector);
+    *table = arrow::Table::Make(schema, arrays);
+
+    return arrow::Status::OK();
+}
+
 #define EXIT_ON_FAILURE(expr)                      \
   do {                                             \
     arrow::Status status_ = (expr);                \
@@ -145,12 +323,24 @@ int main(int argc, char** argv) {
             {9, 9.0, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0}},
             {10, 10.0, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0}}
     };
+
+    // create data source db schema, as it's needed for arrow table creation
+    // it's better to get schema here, because every thread need the same schema object
+    string sqlite_file = "channel0.patch";
+    string_map source_schema_map;
+    get_schema(sqlite_file, source_schema_map);
+    print_dhl_sqlite_schema(source_schema_map);
+
     arrow::MemoryPool* pool = arrow::default_memory_pool();
 
     std::vector<table_ptr> tables;
     for (int i = 0; i < table_count; i++) {
         table_ptr table;
-        EXIT_ON_FAILURE(VectorToColumnarTable(rows, &table, row_count / 10));
+
+        //EXIT_ON_FAILURE(VectorToColumnarTable(rows, &table, row_count / 10));
+
+        EXIT_ON_FAILURE(dynamic_columns_load(&table, row_count, source_schema_map));
+
         std::cout << "Table #" << i + 1 << " loaded rows = " << table->num_rows() << ". Memory alloc:" << pool->bytes_allocated() << ", max: " << pool->max_memory() << std::endl;
         tables.push_back(table);
     }
