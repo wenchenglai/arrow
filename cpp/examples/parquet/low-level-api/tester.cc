@@ -66,13 +66,10 @@ arrow::MemoryPool* get_memory_pool(memory_pool_type type) {
     arrow::MemoryPool* pool;
     if (type == SystemPool) {
         pool = arrow::system_memory_pool();
-        std::cout << "We are using Standard System Memory Pool." << std::endl;
     } else if (type == MiPool) {
         ABORT_NOT_OK(arrow::mimalloc_memory_pool(&pool));
-        std::cout << "We are using Mi Memory Pool." << std::endl;
     } else {
         pool = arrow::default_memory_pool();
-        std::cout << "We are using JE Memory Pool." << std::endl;
     }
     return pool;
 }
@@ -347,6 +344,8 @@ int main(int argc, char** argv) {
             pool_type = MiPool;
         }
     }
+
+    std::cout << "We are creating " << table_count << " tables, each has " << row_count << " rows, using memory pool: " << pool_type << std::endl;
 
     std::vector<data_row> rows = {
             {1, 1.0, {1.0}},
