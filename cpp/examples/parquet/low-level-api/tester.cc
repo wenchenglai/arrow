@@ -30,6 +30,26 @@ using arrow::Int32Builder;
 using arrow::BinaryBuilder;
 using arrow::ListBuilder;
 
+enum memory_pool_type {JePool, SystemPool, MiPool};
+
+#define EXIT_ON_FAILURE(expr)                      \
+  do {                                             \
+    arrow::Status status_ = (expr);                \
+    if (!status_.ok()) {                           \
+      std::cerr << status_.message() << std::endl; \
+      return EXIT_FAILURE;                         \
+    }                                              \
+  } while (0);
+
+#define ABORT_NOT_OK(s)                  \
+  do {                                   \
+    ::arrow::Status _s = (s);            \
+    if (ARROW_PREDICT_FALSE(!_s.ok())) { \
+      std::cerr << s.ToString() << "\n"; \
+      std::abort();                      \
+    }                                    \
+  } while (false);
+
 // While we want to use columnar data structures to build efficient operations, we
 // often receive data in a row-wise fashion from other systems. In the following,
 // we want give a brief introduction into the classes provided by Apache Arrow by
@@ -41,6 +61,21 @@ struct data_row {
     double cost;
     std::vector<double> cost_components;
 };
+
+arrow::MemoryPool* get_memory_pool(memory_pool_type type) {
+    arrow::MemoryPool* pool;
+    if (type == SystemPool) {
+        pool = arrow::system_memory_pool();
+        std::cout << "We are using Standard System Memory Pool." << std::endl;
+    } else if (type == MiPool) {
+        ABORT_NOT_OK(arrow::mimalloc_memory_pool(&pool));
+        std::cout << "We are using Mi Memory Pool." << std::endl;
+    } else {
+        pool = arrow::default_memory_pool();
+        std::cout << "We are using JE Memory Pool." << std::endl;
+    }
+    return pool;
+}
 
 // Transforming a vector of structs into a columnar Table.
 //
@@ -157,8 +192,8 @@ arrow::Status print_binary_builder_summary(std::shared_ptr<BinaryBuilder> builde
     return arrow::Status::OK();
 }
 
-arrow::Status dynamic_columns_load(std::shared_ptr<arrow::Table>* table, int row_count, string_map const &source_schema_map) {
-    arrow::MemoryPool* pool = arrow::default_memory_pool();
+arrow::Status dynamic_columns_load(table_ptr* table, int row_count, string_map const &source_schema_map, memory_pool_type pool_type) {
+    arrow::MemoryPool* pool = get_memory_pool(pool_type);
 
     std::unordered_map<string, std::shared_ptr<DoubleBuilder>> double_builder_map;
     std::unordered_map<string, std::shared_ptr<FloatBuilder>> float_builder_map;
@@ -290,18 +325,10 @@ arrow::Status dynamic_columns_load(std::shared_ptr<arrow::Table>* table, int row
     return arrow::Status::OK();
 }
 
-#define EXIT_ON_FAILURE(expr)                      \
-  do {                                             \
-    arrow::Status status_ = (expr);                \
-    if (!status_.ok()) {                           \
-      std::cerr << status_.message() << std::endl; \
-      return EXIT_FAILURE;                         \
-    }                                              \
-  } while (0);
-
 int main(int argc, char** argv) {
     int table_count = 10;
     int row_count = 50;
+    memory_pool_type pool_type = JePool;
 
     if (argc > 1) {
         table_count = atoi(argv[1]);
@@ -309,6 +336,16 @@ int main(int argc, char** argv) {
 
     if (argc > 2) {
         row_count = atoi(argv[2]);
+    }
+
+    if (argc > 3) {
+        string pool_name = argv[3];
+
+        if ("system" == pool_name) {
+            pool_type = SystemPool;
+        } else if ("mi" == pool_name) {
+            pool_type = MiPool;
+        }
     }
 
     std::vector<data_row> rows = {
@@ -329,9 +366,11 @@ int main(int argc, char** argv) {
     string sqlite_file = "channel0.patch";
     string_map source_schema_map;
     get_schema(sqlite_file, source_schema_map);
-    print_dhl_sqlite_schema(source_schema_map);
+    //print_dhl_sqlite_schema(source_schema_map);
 
-    arrow::MemoryPool* pool = arrow::default_memory_pool();
+    auto start = std::chrono::steady_clock::now();
+
+    arrow::MemoryPool* pool = get_memory_pool(pool_type);
 
     std::vector<table_ptr> tables;
     for (int i = 0; i < table_count; i++) {
@@ -339,7 +378,7 @@ int main(int argc, char** argv) {
 
         //EXIT_ON_FAILURE(VectorToColumnarTable(rows, &table, row_count / 10));
 
-        EXIT_ON_FAILURE(dynamic_columns_load(&table, row_count, source_schema_map));
+        EXIT_ON_FAILURE(dynamic_columns_load(&table, row_count, source_schema_map, pool_type));
 
         std::cout << "Table #" << i + 1 << " loaded rows = " << table->num_rows() << ". Memory alloc:" << pool->bytes_allocated() << ", max: " << pool->max_memory() << std::endl;
         tables.push_back(table);
@@ -348,6 +387,10 @@ int main(int argc, char** argv) {
     arrow::Result<table_ptr> result = arrow::ConcatenateTables(tables);
     table_ptr result_table = result.ValueOrDie();
     std::cout << "After merging " << tables.size() << " tables, row size = " << result_table->num_rows() << std::endl;
+
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end - start;
+    std::cout << "Total elapsed time: " << elapsed_seconds.count() << " seconds. " << std::endl;
 
     return EXIT_SUCCESS;
 }
