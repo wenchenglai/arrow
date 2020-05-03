@@ -114,7 +114,7 @@ string_vec get_all_files_path_per_node(string dhl_name, string file_extension, i
 
     // TODO strings for different machine, the strings is one node ONLY
     // for vi3-0009
-    dhl_path = "/Volumes/remoteStorage/" + dhl_name;
+    //dhl_path = "/Volumes/remoteStorage/" + dhl_name;
     // for windows Linux
     //dhl_path = "/home/wen/github/arrow/data/test_dirs/ROCOS/" + dhl_name;
 
@@ -177,9 +177,6 @@ int get_all_files_path(string dhl_name, string file_extension, std::vector<strin
     for (int i = 0; i < NODES_COUNT; i++) {
         std::future<string_vec> future = std::async(std::launch::async, get_all_files_path_per_node, dhl_name, file_extension, i);
         futures.push_back(std::move(future));
-
-        // TODO
-        break;
     }
 
     for (auto&& future : futures) {
@@ -764,7 +761,6 @@ int load_data_to_arrow_v3_one_table_per_thread(
 
             } else if ("BLOB" == col_type) {
                 int blob_size = sqlite3_column_bytes(stmt, i);
-                //blob_size = 0;
                 uint8_t *local_buffer;
 
                 if (blob_size > 0) {
@@ -1824,7 +1820,7 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "All threads have been started...." << std::endl;
-    
+
     for (auto&& future : futures) {
         int count_per_thread = future.get();
         total_row_count += count_per_thread;
