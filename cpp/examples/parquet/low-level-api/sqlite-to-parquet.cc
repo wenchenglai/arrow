@@ -675,7 +675,7 @@ int load_data_to_arrow_v3_one_table_per_thread(
         std::unordered_map<string, std::shared_ptr<FloatBuilder>> &float_builder_map,
         std::unordered_map<string, std::shared_ptr<BinaryBuilder>> &binary_builder_map,
         std::unordered_map<string, std::shared_ptr<Int32Builder>> &int32_builder_map,
-        int &binary_count, uint64_t &binary_size_total, int &binary_zero_count) {
+        uint64_t &binary_count, uint64_t &binary_size_total, uint64_t &binary_zero_count) {
 
     sqlite3* pDb;
     int flags = (SQLITE_OPEN_READONLY);
@@ -764,7 +764,7 @@ int load_data_to_arrow_v3_one_table_per_thread(
 
             } else if ("BLOB" == col_type) {
                 int blob_size = sqlite3_column_bytes(stmt, i);
-                blob_size = 0;
+                //blob_size = 0;
                 uint8_t *local_buffer;
 
                 if (blob_size > 0) {
@@ -1564,8 +1564,8 @@ int process_each_data_batch(
         }
 
         int table_count = 0;
-        int binary_count = 0;
-        int binary_zero_count = 0;
+        uint64_t binary_count = 0;
+        uint64_t binary_zero_count = 0;
         uint64_t binary_size_total = 0;
         for (auto file_path : file_paths) {
             sum_num_rows_per_thread += load_data_to_arrow_v3_one_table_per_thread(file_path, int64_builder_map, double_builder_map,
@@ -1573,11 +1573,18 @@ int process_each_data_batch(
 
             table_count++;
 
-            std::cout << "Memory alloc:" << pool->bytes_allocated() << ", max: " << pool->max_memory()
+//            std::cout << "Memory alloc:" << pool->bytes_allocated() << ", max: " << pool->max_memory()
+//            << ", total rows:" << sum_num_rows_per_thread << ", table#: " << table_count
+//            << ", binary count: " << binary_count << ", zero_count: " << binary_zero_count << ", size: " << binary_size_total
+//            << std::endl;
+        }
+
+        std::cout << "Finished builder appending, memory alloc:" << pool->bytes_allocated() << ", max: " << pool->max_memory()
             << ", total rows:" << sum_num_rows_per_thread << ", table#: " << table_count
             << ", binary count: " << binary_count << ", zero_count: " << binary_zero_count << ", size: " << binary_size_total
             << std::endl;
-        }
+
+        std::cout << "Now we start merging " << table_count << " tables...." << std::endl;
 
         // Two tasks are accomplished in here:
         // 1. create arrow array for each column.  The whole arrays object will be used to create an Arrow Table
@@ -1808,20 +1815,20 @@ int main(int argc, char** argv) {
         std::cout << "This node will have thread count = " << vec_with_thread_count.size() << std::endl;
 
         for (auto files : vec_with_thread_count) {
-            total_row_count += process_each_data_batch(files, source_schema_map, sink_target, thread_id++, has_encrypt, reserve_size);
+            //total_row_count += process_each_data_batch(files, source_schema_map, sink_target, thread_id++, has_encrypt, reserve_size);
 
-//            std::future<int> future = std::async(std::launch::async, process_each_data_batch, files, source_schema_map, sink_target, thread_id++, has_encrypt);
-//            futures.push_back(std::move(future));
+            std::future<int> future = std::async(std::launch::async, process_each_data_batch, files,
+                    source_schema_map, sink_target, thread_id++, has_encrypt, reserve_size);
+            futures.push_back(std::move(future));
         }
     }
 
-    //std::cout << "All threads have been started...." << std::endl;
-
-//    int total_row_count = 0;
-//    for (auto&& future : futures) {
-//        int count_per_thread = future.get();
-//        total_row_count += count_per_thread;
-//    }
+    std::cout << "All threads have been started...." << std::endl;
+    
+    for (auto&& future : futures) {
+        int count_per_thread = future.get();
+        total_row_count += count_per_thread;
+    }
 
     std::cout << "All threads finished their work.  The total row count is " << total_row_count << std::endl;
 
