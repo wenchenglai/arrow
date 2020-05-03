@@ -670,11 +670,12 @@ int load_data_to_arrow(
 /* ################################################### */
 int load_data_to_arrow_v3_one_table_per_thread(
         string file_path,
-        std::unordered_map<string, std::shared_ptr<arrow::Int64Builder>> &int64_builder_map,
-        std::unordered_map<string, std::shared_ptr<arrow::DoubleBuilder>> &double_builder_map,
-        std::unordered_map<string, std::shared_ptr<arrow::FloatBuilder>> &float_builder_map,
-        std::unordered_map<string, std::shared_ptr<arrow::BinaryBuilder>> &binary_builder_map,
-        std::unordered_map<string, std::shared_ptr<arrow::Int32Builder>> &int32_builder_map) {
+        std::unordered_map<string, std::shared_ptr<Int64Builder>> &int64_builder_map,
+        std::unordered_map<string, std::shared_ptr<DoubleBuilder>> &double_builder_map,
+        std::unordered_map<string, std::shared_ptr<FloatBuilder>> &float_builder_map,
+        std::unordered_map<string, std::shared_ptr<BinaryBuilder>> &binary_builder_map,
+        std::unordered_map<string, std::shared_ptr<Int32Builder>> &int32_builder_map,
+        int &binary_count, uint64_t &binary_size_total, int &binary_zero_count) {
 
     sqlite3* pDb;
     int flags = (SQLITE_OPEN_READONLY);
@@ -764,16 +765,25 @@ int load_data_to_arrow_v3_one_table_per_thread(
             } else if ("BLOB" == col_type) {
                 int blob_size = sqlite3_column_bytes(stmt, i);
                 blob_size = 0;
-                const uint8_t *pBuffer;
+                uint8_t *local_buffer;
+
                 if (blob_size > 0) {
-                    pBuffer = reinterpret_cast<const uint8_t*>(sqlite3_column_blob(stmt, i));
+                    binary_count++;
+                    binary_size_total += blob_size;
+                    const uint8_t* blob_ptr = reinterpret_cast<const uint8_t*>(sqlite3_column_blob(stmt, i));
+                    local_buffer = new uint8_t[blob_size];
+                    std::copy(blob_ptr, blob_ptr + blob_size, local_buffer);
                 } else {
+                    binary_zero_count++;
                     blob_size = 1;
-                    pBuffer = new uint8_t[blob_size];
+                    local_buffer = new uint8_t[blob_size];
+                    local_buffer[0] = 64;
                 }
 
                 std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
-                PARQUET_THROW_NOT_OK(builder->Append(pBuffer, blob_size));
+                PARQUET_THROW_NOT_OK(builder->Append(local_buffer, blob_size));
+
+                delete local_buffer;
             } else if ("INTEGER" == col_type) {
                 std::shared_ptr<arrow::Int32Builder> builder = int32_builder_map[col_name];
                 PARQUET_THROW_NOT_OK(builder->Append(sqlite3_column_int(stmt, i)));
@@ -1554,14 +1564,19 @@ int process_each_data_batch(
         }
 
         int table_count = 0;
+        int binary_count = 0;
+        int binary_zero_count = 0;
+        uint64_t binary_size_total = 0;
         for (auto file_path : file_paths) {
             sum_num_rows_per_thread += load_data_to_arrow_v3_one_table_per_thread(file_path, int64_builder_map, double_builder_map,
-                    float_builder_map, binary_builder_map, int32_builder_map);
+                    float_builder_map, binary_builder_map, int32_builder_map, binary_count, binary_size_total, binary_zero_count);
 
             table_count++;
 
             std::cout << "Memory alloc:" << pool->bytes_allocated() << ", max: " << pool->max_memory()
-            << ", total rows:" << sum_num_rows_per_thread << ", table#: " << table_count << std::endl;
+            << ", total rows:" << sum_num_rows_per_thread << ", table#: " << table_count
+            << ", binary count: " << binary_count << ", zero_count: " << binary_zero_count << ", size: " << binary_size_total
+            << std::endl;
         }
 
         // Two tasks are accomplished in here:
