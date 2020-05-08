@@ -22,7 +22,7 @@
 
 #include <arrow/api.h>
 
-#include "sqlite_util.h"
+#include "sqlite3_util.h"
 
 using arrow::DoubleBuilder;
 using arrow::FloatBuilder;

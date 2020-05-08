@@ -22,7 +22,8 @@ add_executable(parquet-stream-api-example parquet-stream-api/stream-reader-write
 add_executable(dhl-reader low-level-api/dhl-reader.cc)
 add_executable(sqlite-reader low-level-api/sqlite-reader.cc low-level-api/sqlite3.c)
 add_executable(sqlite-to-parquet low-level-api/sqlite-to-parquet.cc low-level-api/sqlite3.c)
-add_executable(tester low-level-api/tester.cc low-level-api/sqlite3.c)
+add_executable(sqlite-to-arrow low-level-api/sqlite-to-arrow.cc low-level-api/sqlite3.c)
+add_executable(tester low-level-api/arrow_tester.cc low-level-api/sqlite3.c)
 
 target_include_directories(parquet-low-level-example PRIVATE low-level-api/)
 target_include_directories(parquet-low-level-example2 PRIVATE low-level-api/)
@@ -48,6 +49,7 @@ target_link_libraries(parquet-stream-api-example ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(dhl-reader ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(sqlite-reader ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(sqlite-to-parquet ${PARQUET_EXAMPLE_LINK_LIBS})
+target_link_libraries(sqlite-to-arrow ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(tester ${PARQUET_EXAMPLE_LINK_LIBS})
 
 if(PARQUET_REQUIRE_ENCRYPTION)
