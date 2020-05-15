@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <dirent.h>
@@ -35,7 +36,48 @@
  * https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
  **/
 
+typedef std::vector<std::string> string_vec;
+
+const string QUERY_COLUMNS_FILE_NAME = "columns.txt";
 const std::string PARQUET = ".parquet";
+
+// break down a string using delimiter delim.
+void tokenize(string const &str, const char delim, string_vec &out)
+{
+    size_t start;
+    size_t end = 0;
+
+    while ((start = str.find_first_not_of(delim, end)) != string::npos)
+    {
+        end = str.find(delim, start);
+        out.push_back(str.substr(start, end - start));
+    }
+}
+
+string_vec get_query_columns(std::string file_name) {
+    std::ifstream in_file;
+
+    in_file.open(file_name);
+    string_vec columns;
+
+    if (!in_file) {
+        return columns;
+    }
+
+    int size = 65535;
+    char columns_str[size];
+    in_file.getline(columns_str, size);
+
+    in_file.close();
+
+    const char delim = ',';
+
+    tokenize(columns_str, delim, columns);
+
+    return columns;
+}
+
+
 
 void print_data(int64_t rows_read, int16_t definition_level, int16_t repetition_level, int64_t value, int64_t values_read, int i) {
     std::cout << "rows_read = " << rows_read << std::endl;
@@ -129,7 +171,31 @@ table_ptr read_parquet_file_into_arrow_table(string file_path, bool has_encrypt)
         std::unique_ptr<parquet::arrow::FileReader> arrow_reader;
         PARQUET_THROW_NOT_OK(parquet::arrow::FileReader::Make(::arrow::default_memory_pool(), std::move(parquet_reader), &arrow_reader));
         table_ptr table;
-        PARQUET_THROW_NOT_OK(arrow_reader->ReadTable(&table));
+
+
+        string_vec vec = get_query_columns(QUERY_COLUMNS_FILE_NAME);
+
+        if (vec.size() > 0) {
+            std::shared_ptr<arrow::Schema> schema;
+            arrow_reader->GetSchema(&schema);
+
+            std::vector<int> column_subset;
+            for (string col : vec) {
+                std::string::iterator end_pos = std::remove(col.begin(), col.end(), ' ');
+                col.erase(end_pos, col.end());
+
+                int index = schema->GetFieldIndex(col);
+
+                std::cout << "selected column = " << col << ", index = " << index << std::endl;
+                if (index != -1) {
+                    column_subset.push_back(index);
+                }
+            }
+
+            PARQUET_THROW_NOT_OK(arrow_reader->ReadTable(column_subset, &table));
+        } else {
+            PARQUET_THROW_NOT_OK(arrow_reader->ReadTable(&table));
+        }
 
         return table;
     } catch (const std::exception& e) {
