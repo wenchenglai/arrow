@@ -186,7 +186,7 @@ table_ptr read_parquet_file_into_arrow_table(string file_path, bool has_encrypt)
 
                 int index = schema->GetFieldIndex(col);
 
-                std::cout << "selected column = " << col << ", index = " << index << std::endl;
+                //std::cout << "selected column = " << col << ", index = " << index << std::endl;
                 if (index != -1) {
                     column_subset.push_back(index);
                 }
