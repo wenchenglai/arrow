@@ -12,6 +12,8 @@
 
 string get_query_columns(string);
 
+const string CHILD_DHL_KEY = "sAr5w3Vk5l";
+const string DHL_KEY = "e9FkChw3xF";
 const string QUERY_COLUMNS_FILE_NAME = "columns.txt";
 string CANONICAL_QUERY_STRING = get_query_columns(QUERY_COLUMNS_FILE_NAME);
 

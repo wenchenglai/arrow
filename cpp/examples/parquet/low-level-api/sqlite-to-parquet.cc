@@ -988,13 +988,13 @@ int process_each_data_batch(
 
     if (memory_target == Arrow) {
         std::vector<table_ptr> tables;
-        tables.reserve(2100);
+        //tables.reserve(2100);
         int table_count = 0;
 
         arrow::MemoryPool* pool = arrow::default_memory_pool();
         std::cout << "Memory Pool Type: " << pool->backend_name() << std::endl;
 
-        // individual db file will be process in this loop
+        // individual db file will be processed in this loop
         for (auto file_path : file_paths) {
             table_ptr table;
             load_data_to_arrow_one_sqlite_table_per_arrow_table(file_path, source_schema_map, &table, reserve_size);
@@ -1101,38 +1101,38 @@ int process_each_data_batch(
         // 1. create arrow array for each column.  The whole arrays object will be used to create an Arrow Table
         // 2. create a vector of Field (schema) along the way
         std::vector<std::shared_ptr<arrow::Array>> arrays;
-        std::vector<std::shared_ptr<arrow::Field>> schema_vector;
+        std::vector<std::shared_ptr<arrow::Field>> fields;
         for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
             string col_name = itr->first;
             string col_type = itr->second;
 
             std::shared_ptr<arrow::Array> array;
             if ("BIGINT" == col_type) {
-                schema_vector.emplace_back(arrow::field(col_name, arrow::int64()));
+                fields.emplace_back(arrow::field(col_name, arrow::int64()));
 
                 std::shared_ptr<arrow::Int64Builder> builder = int64_builder_map[col_name];
                 PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
             } else if ("DOUBLE" == col_type) {
-                schema_vector.emplace_back(arrow::field(col_name, arrow::float64()));
+                fields.emplace_back(arrow::field(col_name, arrow::float64()));
 
                 std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
                 PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
             } else if ("FLOAT" == col_type) {
-                schema_vector.emplace_back(arrow::field(col_name, arrow::float32()));
+                fields.emplace_back(arrow::field(col_name, arrow::float32()));
 
                 std::shared_ptr<arrow::FloatBuilder> builder = float_builder_map[col_name];
                 PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
             } else if ("BLOB" == col_type) {
-                schema_vector.emplace_back(arrow::field(col_name, arrow::binary()));
+                fields.emplace_back(arrow::field(col_name, arrow::binary()));
 
                 std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
                 PARQUET_THROW_NOT_OK(builder->Finish(&array));
 
             } else if ("INTEGER" == col_type) {
-                schema_vector.emplace_back(arrow::field(col_name, arrow::int32()));
+                fields.emplace_back(arrow::field(col_name, arrow::int32()));
 
                 std::shared_ptr<arrow::Int32Builder> builder = int32_builder_map[col_name];
                 PARQUET_THROW_NOT_OK(builder->Finish(&array));
@@ -1141,7 +1141,7 @@ int process_each_data_batch(
             arrays.emplace_back(array);
         }
 
-        auto schema = std::make_shared<arrow::Schema>(schema_vector);
+        auto schema = std::make_shared<arrow::Schema>(fields);
         table_ptr result_table = arrow::Table::Make(schema, arrays);
 
         std::cout << "After merging " << table_count << " tables, row size = " << result_table->num_rows() << ", thread id = " << thread_id << std::endl;
@@ -1177,8 +1177,10 @@ int process_each_data_batch(
         }
 
         wp_builder.compression(parquet::Compression::SNAPPY);
-        wp_builder.compression(parquet::Compression::UNCOMPRESSED);
-        wp_builder.disable_dictionary();
+        wp_builder.enable_dictionary();
+
+        //wp_builder.compression(parquet::Compression::UNCOMPRESSED);
+        //wp_builder.disable_dictionary();
 
         std::shared_ptr<parquet::WriterProperties> props = wp_builder.build();
 
