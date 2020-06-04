@@ -22,11 +22,23 @@
 This directory contains the code and build system for the Arrow C++ libraries,
 as well as for the C++ libraries for Apache Parquet.
 
+A few DHL data performance software runners are created: sqlite-to-parquet, sqlite-to-arrow, dhl-reader
+
 To compile performance tester application or the examples, you can choose to either build a debug or release version.
 
 Please go to /arrow/cpp folder and follow the steps below:
 
-# Release Build
+# Run Tests
+
+`ctest j16 --output-on-failure`
+
+# Development Guidelines
+
+Please read the Google C++ Styles Guidelines
+
+https://google.github.io/styleguide/cppguide.html
+
+## Release Build
 
 `mkdir parquet_release`
 
@@ -34,7 +46,7 @@ Please go to /arrow/cpp folder and follow the steps below:
 
 `cmake -DARROW_PARQUET=ON -DARROW_OPTIONAL_INSTALL=ON -DARROW_MIMALLOC=ON -DPARQUET_BUILD_EXAMPLES=ON -DARROW_BUILD_EXAMPLES=ON -DPARQUET_REQUIRE_ENCRYPTION=ON -DARROW_WITH_SNAPPY=ON ..`
 
-# Debug Build
+## Debug Build
 
 `mkdir parquet_debug`
 
@@ -42,7 +54,7 @@ Please go to /arrow/cpp folder and follow the steps below:
 
 `cmake -DCMAKE_BUILD_TYPE=Debug -DARROW_MIMALLOC=ON -DARROW_PARQUET=ON -DARROW_OPTIONAL_INSTALL=ON -DPARQUET_BUILD_EXAMPLES=ON -DARROW_BUILD_EXAMPLES=ON -DPARQUET_REQUIRE_ENCRYPTION=ON -DARROW_WITH_SNAPPY=ON ..`
 
-# Build Binaries
+## Build Binaries
 
 Next, let's start building the artifacts:
 
@@ -80,11 +92,11 @@ Run DHL Parquet data loader into Arrow table:
 Run DHL SQLite data loader into Arrow table:
 `./sqlite-to-arrow dhl-name`
 
-# Testing
+## Testing Data
 
 Test data is located at arrow/data folder, there are multiple parquet files.
 
-## possible compilation error
+### possible compilation error
 
 You must have libssl installed to have cryptograpic feature enabled
 
