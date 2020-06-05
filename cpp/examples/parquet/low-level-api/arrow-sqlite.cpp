@@ -1,19 +1,11 @@
-#include <cassert>
 #include <chrono>
 #include <dirent.h>
 #include <fstream>
 #include <future>
 #include <iostream>
-#include <memory>
-#include <thread>
 
 #include <arrow/api.h>
 #include <arrow/io/file.h>
-
-#include <parquet/api/reader.h>
-#include <parquet/api/writer.h>
-#include <parquet/arrow/reader.h>
-#include <parquet/arrow/writer.h>
 
 #include "sqlite3.h"
 
@@ -27,6 +19,11 @@ using arrow::FloatBuilder;
 using arrow::Int64Builder;
 using arrow::Int32Builder;
 using arrow::BinaryBuilder;
+using arrow::Int32Array;
+using arrow::Int64Array;
+using arrow::FloatArray;
+using arrow::DoubleArray;
+using arrow::BinaryArray;
 
 #define ABORT_ON_FAILURE(expr)                     \
   do {                                             \
@@ -42,13 +39,11 @@ string get_query_columns(string);
 enum data_sink_type {Arrow, CppType, Parquet, ArrowTablePerThread};
 
 const string QUERY_COLUMNS_FILE_NAME = "columns.txt";
-const string PARQUET = ".parquet";
 const int NODES_COUNT = 6;
 const string col_encryp_key_id = "key1";
 const string col_encryp_key = "9874567896123459";
 const string footer_encryp_key_id = "key2";
 const string footer_encryp_key = "9123856789712348";
-//constexpr int64_t ROW_GROUP_SIZE = 512;  //
 
 string CANONICAL_QUERY_STRING = get_query_columns(QUERY_COLUMNS_FILE_NAME);
 
@@ -87,9 +82,9 @@ void tokenize(string const &str, const char delim, string_vec &out)
     }
 }
 
-string_vec get_all_files_path_per_node(string root_path, string dhl_name, string file_extension, int node_index) {
+string_vec get_all_files_path_per_node(string input_path, string dhl_name, string file_extension, int node_index) {
     // CONSTANTS declaration, could move else where for more flexibility
-    string DHL_ROOT_PATH = root_path;
+    string DHL_ROOT_PATH = input_path;
 
     if (!opendir(DHL_ROOT_PATH.c_str())) {
         DHL_ROOT_PATH = "/Users/wen/github/arrow/data/test_dirs/";
@@ -165,11 +160,11 @@ string_vec get_all_files_path_per_node(string root_path, string dhl_name, string
     return file_paths;
 }
 
-int get_all_files_path(string root_path, string dhl_name, string file_extension, std::vector<string_vec> &file_paths_all_nodes) {
+int get_all_files_path(string input_path, string dhl_name, string file_extension, std::vector<string_vec> &file_paths_all_nodes) {
 
     std::vector<std::future<string_vec>> futures;
     for (int i = 0; i < NODES_COUNT; i++) {
-        std::future<string_vec> future = std::async(std::launch::async, get_all_files_path_per_node, root_path, dhl_name, file_extension, i);
+        std::future<string_vec> future = std::async(std::launch::async, get_all_files_path_per_node, input_path, dhl_name, file_extension, i);
         futures.push_back(std::move(future));
     }
 
@@ -370,17 +365,17 @@ int load_data_to_arrow_v3_one_table_per_thread(
 
             if ("BIGINT" == col_type) {
                 std::shared_ptr<arrow::Int64Builder> builder = int64_builder_map[col_name];
-                PARQUET_THROW_NOT_OK(builder->Append(sqlite3_column_int64(stmt, i)));
+                ABORT_ON_FAILURE(builder->Append(sqlite3_column_int64(stmt, i)));
 
             } else if ("DOUBLE" == col_type) {
                 std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
                 double val = sqlite3_column_double(stmt, i);
-                PARQUET_THROW_NOT_OK(builder->Append(val));
+                ABORT_ON_FAILURE(builder->Append(val));
 
             } else if ("FLOAT" == col_type) {
                 std::shared_ptr<arrow::FloatBuilder> builder = float_builder_map[col_name];
                 float val = sqlite3_column_double(stmt, i);
-                PARQUET_THROW_NOT_OK(builder->Append(val));
+                ABORT_ON_FAILURE(builder->Append(val));
 
             } else if ("BLOB" == col_type) {
                 int blob_size = sqlite3_column_bytes(stmt, i);
@@ -400,12 +395,12 @@ int load_data_to_arrow_v3_one_table_per_thread(
                 }
 
                 std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
-                PARQUET_THROW_NOT_OK(builder->Append(local_buffer, blob_size));
+                ABORT_ON_FAILURE(builder->Append(local_buffer, blob_size));
 
                 delete local_buffer;
             } else if ("INTEGER" == col_type) {
                 std::shared_ptr<arrow::Int32Builder> builder = int32_builder_map[col_name];
-                PARQUET_THROW_NOT_OK(builder->Append(sqlite3_column_int(stmt, i)));
+                ABORT_ON_FAILURE(builder->Append(sqlite3_column_int(stmt, i)));
             }
         }
     }
@@ -419,7 +414,7 @@ int load_data_to_arrow_v3_one_table_per_thread(
 /* ################################################### */
 
 
-int process_each_data_batch(
+table_ptr process_each_data_batch(
         string_vec const &file_paths,
         string_map const &source_schema_map,
         data_sink_type memory_target,
@@ -448,35 +443,35 @@ int process_each_data_batch(
             if ("DOUBLE" == col_type) {
                 std::shared_ptr<DoubleBuilder> builder = std::make_shared<DoubleBuilder>(arrow::float64(), pool);
                 if (reserve_size > 0) {
-                    PARQUET_THROW_NOT_OK(builder->Reserve(reserve_size));
+                    ABORT_ON_FAILURE(builder->Reserve(reserve_size));
                 }
                 double_builder_map[col_name] = builder;
 
             } else if ("FLOAT" == col_type) {
                 std::shared_ptr<FloatBuilder> builder = std::make_shared<FloatBuilder>(arrow::float32(), pool);
                 if (reserve_size > 0) {
-                    PARQUET_THROW_NOT_OK(builder->Reserve(reserve_size));
+                    ABORT_ON_FAILURE(builder->Reserve(reserve_size));
                 }
                 float_builder_map[col_name] = builder;
 
             } else if ("BIGINT" == col_type) {
                 std::shared_ptr<Int64Builder> builder = std::make_shared<Int64Builder>(arrow::int64(), pool);
                 if (reserve_size > 0) {
-                    PARQUET_THROW_NOT_OK(builder->Reserve(reserve_size));
+                    ABORT_ON_FAILURE(builder->Reserve(reserve_size));
                 }
                 int64_builder_map[col_name] = builder;
 
             } else if ("INTEGER" == col_type) {
                 std::shared_ptr<Int32Builder> builder = std::make_shared<Int32Builder>(arrow::int32(), pool);
                 if (reserve_size > 0) {
-                    PARQUET_THROW_NOT_OK(builder->Reserve(reserve_size));
+                    ABORT_ON_FAILURE(builder->Reserve(reserve_size));
                 }
                 int32_builder_map[col_name] = builder;
 
             } else if ("BLOB" == col_type) {
                 std::shared_ptr<BinaryBuilder> builder = std::make_shared<BinaryBuilder>(arrow::binary(), pool);
                 if (reserve_size > 0) {
-                    PARQUET_THROW_NOT_OK(builder->Reserve(reserve_size));
+                    ABORT_ON_FAILURE(builder->Reserve(reserve_size));
                 }
                 binary_builder_map[col_name] = builder;
             }
@@ -524,31 +519,31 @@ int process_each_data_batch(
                 fields.emplace_back(arrow::field(col_name, arrow::int64()));
 
                 std::shared_ptr<arrow::Int64Builder> builder = int64_builder_map[col_name];
-                PARQUET_THROW_NOT_OK(builder->Finish(&array));
+                ABORT_ON_FAILURE(builder->Finish(&array));
 
             } else if ("DOUBLE" == col_type) {
                 fields.emplace_back(arrow::field(col_name, arrow::float64()));
 
                 std::shared_ptr<arrow::DoubleBuilder> builder = double_builder_map[col_name];
-                PARQUET_THROW_NOT_OK(builder->Finish(&array));
+                ABORT_ON_FAILURE(builder->Finish(&array));
 
             } else if ("FLOAT" == col_type) {
                 fields.emplace_back(arrow::field(col_name, arrow::float32()));
 
                 std::shared_ptr<arrow::FloatBuilder> builder = float_builder_map[col_name];
-                PARQUET_THROW_NOT_OK(builder->Finish(&array));
+                ABORT_ON_FAILURE(builder->Finish(&array));
 
             } else if ("BLOB" == col_type) {
                 fields.emplace_back(arrow::field(col_name, arrow::binary()));
 
                 std::shared_ptr<arrow::BinaryBuilder> builder = binary_builder_map[col_name];
-                PARQUET_THROW_NOT_OK(builder->Finish(&array));
+                ABORT_ON_FAILURE(builder->Finish(&array));
 
             } else if ("INTEGER" == col_type) {
                 fields.emplace_back(arrow::field(col_name, arrow::int32()));
 
                 std::shared_ptr<arrow::Int32Builder> builder = int32_builder_map[col_name];
-                PARQUET_THROW_NOT_OK(builder->Finish(&array));
+                ABORT_ON_FAILURE(builder->Finish(&array));
             }
 
             arrays.emplace_back(array);
@@ -559,12 +554,14 @@ int process_each_data_batch(
 
         std::cout << "After merging " << table_count << " tables, row size = " << result_table->num_rows() << ", thread id = " << thread_id << std::endl;
 
+        // this table contains all the data per thread
+        return result_table;
     }
 
-    return sum_num_rows_per_thread;
+    return nullptr;
 }
 
-int sqlite_to_parquet(string dhl_name, string root_path) {
+int sqlite_to_arrow(string dhl_name, string input_path, table_ptr* table) {
     // default parameters
     string file_extension = "patch";
     int thread_count_per_node = 1;
@@ -572,7 +569,7 @@ int sqlite_to_parquet(string dhl_name, string root_path) {
     bool has_encrypt = false;
     int reserve_size = 0; // memory reservation size for Arrow Array
 
-    std::cout << "DHL: " << dhl_name << ", root path: " << root_path << ", extension: " << file_extension
+    std::cout << "DHL: " << dhl_name << ", root path: " << input_path << ", extension: " << file_extension
               << ", thread count per node: " << thread_count_per_node << ", Sink type: " << sink_target
               << ", reserve size: " << reserve_size << std::endl;
 
@@ -582,7 +579,7 @@ int sqlite_to_parquet(string dhl_name, string root_path) {
 
     // we will create one vector of patch files per node
     std::vector<string_vec> file_paths_all_nodes;
-    get_all_files_path(root_path, dhl_name, file_extension, file_paths_all_nodes);
+    get_all_files_path(input_path, dhl_name, file_extension, file_paths_all_nodes);
 
     auto stop1 = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = stop1 - start;
@@ -599,19 +596,18 @@ int sqlite_to_parquet(string dhl_name, string root_path) {
     get_schema(file_paths_all_nodes.front().front(), source_schema_map);
     //print_schema(source_schema_map);
 
-    std::vector<std::future<int>> futures;
+    std::vector<std::future<table_ptr>> futures;
 
     // file_pathes_all_nodes has NODES_COUNT file_paths.  Each file_paths has all the files on that node
     int thread_id = 1;
-    int total_row_count = 0;
 
     for (auto file_paths : file_paths_all_nodes) {
         auto vec_with_thread_count = split_vector(file_paths, thread_count_per_node);
 
-        std::cout << "After splitting file_paths, this node will have thread count (output file) = " << vec_with_thread_count.size() << std::endl;
+        std::cout << "This node will have thread count = " << vec_with_thread_count.size() << std::endl;
 
         for (auto files : vec_with_thread_count) {
-            std::future<int> future = std::async(
+            std::future<table_ptr> future = std::async(
                     std::launch::async,
                     process_each_data_batch,
                     files,
@@ -627,30 +623,304 @@ int sqlite_to_parquet(string dhl_name, string root_path) {
 
     std::cout << "All threads have been started...." << std::endl;
 
+    std::vector<table_ptr> tables;
+
     for (auto&& future : futures) {
-        int count_per_thread = future.get();
-        total_row_count += count_per_thread;
+        table_ptr table = future.get();
+        tables.push_back(table);
     }
 
-    std::cout << "All threads finished their work.  The total row count is " << total_row_count << std::endl;
+    auto stop2 = std::chrono::steady_clock::now();
+    elapsed_seconds = stop2 - stop1;
+    std::cout << "All threads finishing reading data, it takes: " << elapsed_seconds.count() << " seconds\n";
+
+    arrow::Result<table_ptr> result = arrow::ConcatenateTables(tables);
+    table_ptr result_table = result.ValueOrDie();
+    std::cout << "Final merging " << tables.size() << " tables into one arrow table, total row size = " << result_table->num_rows() << std::endl;
+
+    *table = result_table;
 
     auto end = std::chrono::steady_clock::now();
+    elapsed_seconds = end - stop2;
+    std::cout << "Merging into 1 arrow table takes: " << elapsed_seconds.count() << " seconds\n";
+
     elapsed_seconds = end - start;
-    std::cout << "Total elapsed time: " << elapsed_seconds.count() << "s\n";
+    std::cout << "Total elapsed time from start to finish: " << elapsed_seconds.count() << "s\n";
 
     return 0;
 }
 
+int arrow_to_sqlite(std::shared_ptr<arrow::Table> table, string output_file_path) {
+    std::shared_ptr<arrow::Schema> schema = table->schema();
+    std::vector<std::shared_ptr<arrow::Field>> fields = schema->fields();
+
+    std::cout << "Starting to create SQLite table with row count = " << table->num_rows() << std::endl;
+
+    std::unordered_map<string, std::shared_ptr<Int32Array>> int32_array_map;
+    std::unordered_map<string, std::shared_ptr<Int64Array>> int64_array_map;
+    std::unordered_map<string, std::shared_ptr<FloatArray>> float_array_map;
+    std::unordered_map<string, std::shared_ptr<DoubleArray>> double_array_map;
+    std::unordered_map<string, std::shared_ptr<BinaryArray>> binary_array_map;
+
+    // holds the comma separated string of column names
+    string col_string = "";
+
+    // holds comma sperated string of (col_name sqlite_col_type) pair.  This is for SQLite table construction
+    string schema_string = "";
+
+    // comma separated question mark string to satisfy sqlite's prepared statement. e.g. ?,?,?,?
+    string question_marks = "";
+    for (auto&& field : fields) {
+        string col_name = field->name();
+        arrow::Type::type col_type = field->type()->id();
+
+        //std::cout << "col_name: " << col_name << ", type: " << col_type << std::endl;
+//
+//        if (type_name == arrow::Type::INT32){
+//            std::cout << "int 32 found" << std::endl;
+//        }
+
+        if (arrow::Type::INT32 == col_type) {
+
+//            std::shared_ptr<arrow::ChunkedArray> column = table->GetColumnByName(col_name);
+//            std::cout << "column length: " << column->length() << std::endl;
+//            std::cout << "column null count: " << column->null_count() << std::endl;
+//            std::cout << "column num_chunks: " << column->num_chunks() << std::endl;
+//
+//            std::vector<std::shared_ptr<arrow::Array>> arr_vec = column->chunks();
+//            std::cout << "arr_vec size: " << arr_vec.size() << std::endl;
+//
+//            std::shared_ptr<arrow::Array> array = arr_vec[0];
+//            std::cout << "array length: " << array->length() << std::endl;
+//            std::cout << "array offset: " << array->offset() << std::endl;
+//
+//
+//            auto aaa = std::static_pointer_cast<arrow::Int32Array>(array);
+//            std::cout << "array->Value(0): " << aaa->Value(0) << std::endl;
+//            std::cout << "array->Value(14): " << aaa->Value(14) << std::endl;
+//            std::cout << "array->Value(15): " << aaa->Value(15) << std::endl;
+//            std::cout << "array->Value(16): " << aaa->Value(16) << std::endl;
+//            std::cout << "array->Value(17): " << aaa->Value(17) << std::endl;
+//            std::cout << "array->Value(18): " << aaa->Value(18) << std::endl;
+//
+//
+//            std::shared_ptr<arrow::Array> slice = aaa->Slice(15);
+//            std::cout << "slice length: " << slice->length() << std::endl;
+//            std::cout << "slice offset: " << slice->offset() << std::endl;
+//
+//            auto  slice_narray = std::static_pointer_cast<arrow::Int32Array>(slice);
+//            std::cout << "slice_narray->Value(0): " << slice_narray->Value(0) << std::endl;
+//            std::cout << "slice_narray->Value(1): " << slice_narray->Value(1) << std::endl;
+//            std::cout << "slice_narray->Value(2): " << slice_narray->Value(2) << std::endl;
+//            std::cout << "slice_narray->Value(3): " << slice_narray->Value(3) << std::endl;
+//
+//            std::cout << "array offset after slice: " << array->offset() << std::endl;
+//
+//            std::shared_ptr<arrow::Array> myView;
+//            ABORT_ON_FAILURE(aaa->View(field->type(), &myView));
+//            std::cout << "myView length: " << myView->length() << std::endl;
+//            std::cout << "myView toString: " << myView->ToString() << std::endl;
+//
+//            std::cout << std::endl;
+
+            int32_array_map[col_name] = std::static_pointer_cast<Int32Array>(table->GetColumnByName(col_name)->chunk(0));
+            schema_string += col_name + " INTEGER,";
+
+        } else if (arrow::Type::INT64 == col_type) {
+            int64_array_map[col_name] = std::static_pointer_cast<Int64Array>(table->GetColumnByName(col_name)->chunk(0));
+            schema_string += col_name + " BIGINT,";
+
+        } else if (arrow::Type::FLOAT == col_type) {
+            float_array_map[col_name] = std::static_pointer_cast<FloatArray>(table->GetColumnByName(col_name)->chunk(0));
+            schema_string += col_name + " FLOAT,";
+
+        } else if (arrow::Type::DOUBLE == col_type) {
+            double_array_map[col_name] = std::static_pointer_cast<DoubleArray>(table->GetColumnByName(col_name)->chunk(0));
+            schema_string += col_name + " DOUBLE,";
+
+        } else if (arrow::Type::BINARY == col_type) {
+            binary_array_map[col_name] = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
+            schema_string += col_name + " BLOB,";
+
+        } else {
+            // There is a new data type from the table creator.  What should we do next?
+            continue;
+        }
+        col_string += col_name;
+        col_string += ",";
+        question_marks += "?,";
+    }
+
+    // remove the trailing comma
+    col_string.pop_back();
+    schema_string.pop_back();
+    question_marks.pop_back();
+
+    //std::cout << "col_string = " << col_string << std::endl;
+    //std::cout << "questions marks = " << question_marks << std::endl;
+
+    sqlite3* pDb;
+    int flags = (SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+
+    int bResult = sqlite3_open_v2(output_file_path.c_str(), &pDb, flags, NULL);
+
+    if (SQLITE_OK != bResult) {
+        sqlite3_close(pDb);
+        std::cerr << "Cannot Open v2 DB: " << bResult << std::endl;
+
+        if (nullptr != pDb) {
+            string strMsg = sqlite3_errmsg(pDb);
+            std::cerr << "Error Message: " << strMsg << std::endl;
+            sqlite3_close_v2(pDb);
+            pDb = nullptr;
+        } else {
+            std::cerr << "Unable to get DB handle" << std::endl;
+        }
+        return EXIT_FAILURE;
+    }
+
+//    bResult = sqlite3_key_v2(pDb, nullptr, DHL_KEY.c_str(), static_cast<int>(DHL_KEY.size()));
+//
+//    if (SQLITE_OK != bResult) {
+//        sqlite3_close(pDb);
+//        std::cerr << "Cannot key the DB: " << bResult << std::endl;
+//
+//        if (nullptr != pDb) {
+//            string strMsg = sqlite3_errmsg(pDb);
+//            sqlite3_close_v2(pDb);
+//            pDb = nullptr;
+//            std::cerr << "SQLite Error Message: " << strMsg << std::endl;
+//        } else {
+//            std::cerr << "Unable to key the database" << std::endl;
+//        }
+//
+//        return EXIT_FAILURE;
+//    }
+
+    sqlite3_mutex_enter(sqlite3_db_mutex(pDb));
+    char* errorMessage;
+    sqlite3_exec(pDb, "PRAGMA synchronous=OFF", NULL, NULL, &errorMessage);
+    sqlite3_exec(pDb, "PRAGMA count_changes=OFF", NULL, NULL, &errorMessage);
+    sqlite3_exec(pDb, "PRAGMA journal_mode=MEMORY", NULL, NULL, &errorMessage);
+    sqlite3_exec(pDb, "PRAGMA temp_store=MEMORY", NULL, NULL, &errorMessage);
+
+    sqlite3_exec(pDb, "BEGIN TRANSACTION", NULL, NULL, &errorMessage);
+
+    string create_sql = "CREATE TABLE IF NOT EXISTS attribTable(" + schema_string + ");";
+
+    bResult = sqlite3_exec(pDb, create_sql.c_str(), NULL, 0, &errorMessage);
+
+    if (SQLITE_OK != bResult) {
+        sqlite3_close(pDb);
+        std::cerr << "Cannot execute Create table command: " << bResult << std::endl;
+
+        if (nullptr != pDb) {
+            string strMsg = sqlite3_errmsg(pDb);
+            std::cerr << "Error Message: " << strMsg << std::endl;
+            sqlite3_close_v2(pDb);
+            pDb = nullptr;
+        } else {
+            std::cerr << "Unable to get DB handle" << std::endl;
+        }
+    }
+
+    sqlite3_stmt *stmt;
+
+    string insert_sql = "INSERT INTO attribTable (" + col_string + ") VALUES (" + question_marks + ");";
+
+//    string upsert = "INSERT INTO attribTable (defectId, polarity, class)";
+//    upsert += "  VALUES('1234','1','abc')"
+//    upsert += "  ON CONFLICT(defectId) DO UPDATE SET"
+//    upsert += "    polarity=excluded.phonenumber,"
+//    upsert += "    class=excluded.validDate\n"
+//    upsert += "  WHERE excluded.validDate > phonebook2.validDate;";
+
+    bResult = sqlite3_prepare(pDb, insert_sql.c_str(), -1, &stmt, NULL);
+
+    if (bResult != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        std::cerr << "Cannot prepare statement from DB: " << bResult << std::endl;
+
+        if (nullptr != pDb) {
+            string strMsg = sqlite3_errmsg(pDb);
+            sqlite3_close_v2(pDb);
+            pDb = nullptr;
+            std::cerr << "SQLite Error Message: " << strMsg << std::endl;
+        } else {
+            std::cerr << "Unable to prepare SQLite statement" << std::endl;
+        }
+
+        return EXIT_FAILURE;
+    }
+
+    for (int64_t row_idx = 0; row_idx < table->num_rows(); row_idx++) {
+        int col_idx = 0;
+        for (auto&& field : fields) {
+            string col_name = field->name();
+            arrow::Type::type col_type = field->type()->id();
+
+            if (arrow::Type::INT32 == col_type) {
+                auto array = std::static_pointer_cast<Int32Array>(table->GetColumnByName(col_name)->chunk(0));
+                sqlite3_bind_int(stmt, col_idx, array->Value(row_idx));
+
+            } else if (arrow::Type::INT64 == col_type) {
+                auto array = std::static_pointer_cast<Int64Array>(table->GetColumnByName(col_name)->chunk(0));
+                sqlite3_bind_int64(stmt, col_idx, array->Value(row_idx));
+
+            } else if (arrow::Type::FLOAT == col_type) {
+                auto array = std::static_pointer_cast<FloatArray>(table->GetColumnByName(col_name)->chunk(0));
+                sqlite3_bind_double(stmt, col_idx, array->Value(row_idx));
+
+            } else if (arrow::Type::DOUBLE == col_type) {
+                auto array = std::static_pointer_cast<DoubleArray>(table->GetColumnByName(col_name)->chunk(0));
+                sqlite3_bind_double(stmt, col_idx, array->Value(row_idx));
+
+            } else if (arrow::Type::BINARY == col_type) {
+                //auto array = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
+                //sqlite3_bind_blob(stmt, col_idx, array->GetValue(row_idx, NULL), 1, NULL);
+
+                char* local_buffer = new char[1];
+                local_buffer[0] = 66;
+
+                sqlite3_bind_blob(stmt, col_idx, local_buffer, 1, NULL);
+
+            } else {
+                // There is a new data type from the table creator.  What should we do next?
+                continue;
+            }
+
+            col_idx++;
+        }
+
+        int retVal = sqlite3_step(stmt);
+        if (retVal != SQLITE_DONE)
+        {
+            printf("Commit Failed! %d\n", retVal);
+        }
+
+        sqlite3_reset(stmt);
+    }
+
+    sqlite3_exec(pDb, "COMMIT TRANSACTION", NULL, NULL, &errorMessage);
+    sqlite3_finalize(stmt);
+
+    sqlite3_mutex_leave(sqlite3_db_mutex(pDb));
+    sqlite3_close(pDb);
+
+    return EXIT_SUCCESS;
+}
+
 int main(int argc, char** argv) {
     string dhl_name = "";
-    string root_path = "/mnt/nodes/";
-
+    string input_path = "/mnt/nodes/";
+    string output_path = "/arrow-sqlite-output/output.sqlite.patch";
 
     // Print Help message
     if(argc == 2 && strcmp(argv[1], "-h") == 0) {
         std::cout << "Parameters List" << std::endl;
         std::cout << "1: name of DHL" << std::endl;
-        std::cout << "2: root path" << std::endl;
+        std::cout << "2: input path" << std::endl;
+        std::cout << "3: output path" << std::endl;
         return 0;
     }
 
@@ -659,10 +929,17 @@ int main(int argc, char** argv) {
     }
 
     if (argc > 2) {
-        root_path = argv[2];
+        input_path = argv[2];
 
-        if (root_path.back() != '/')
-            root_path += '/';
+        if (input_path.back() != '/')
+            input_path += '/';
+    }
+
+    if (argc > 3) {
+        output_path = argv[3];
+
+        if (output_path.back() == '/')
+            output_path += "output.sqlite.patch";
     }
 
     if (dhl_name == "") {
@@ -670,7 +947,18 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    return sqlite_to_parquet(dhl_name, root_path);
+    table_ptr table;
+    sqlite_to_arrow(dhl_name, input_path, &table);
+
+    std::cout << "TESTER: Read operation is done, table size = " << table->num_rows() << std::endl;
+
+    std::cout << "TESTER: Let's start saving arrow to sqlite..." << std::endl;
+
+    arrow_to_sqlite(table, output_path);
+
+    std::cout << "TESTER: Finished saving data to sqlite at" << output_path << std::endl;
+
+    return 0;
 }
 
 

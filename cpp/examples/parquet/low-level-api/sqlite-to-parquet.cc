@@ -1357,8 +1357,16 @@ int main(int argc, char** argv) {
         for (auto files : vec_with_thread_count) {
             //total_row_count += process_each_data_batch(files, source_schema_map, sink_target, thread_id++, has_encrypt, reserve_size);
 
-            std::future<int> future = std::async(std::launch::async, process_each_data_batch, files,
-                    source_schema_map, sink_target, thread_id++, has_encrypt, reserve_size);
+            std::future<int> future = std::async(
+                    std::launch::async,
+                    process_each_data_batch,
+                    files,
+                    source_schema_map,
+                    sink_target,
+                    thread_id++,
+                    has_encrypt,
+                    reserve_size);
+
             futures.push_back(std::move(future));
         }
     }
