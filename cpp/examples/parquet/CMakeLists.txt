@@ -22,6 +22,7 @@ add_executable(parquet-stream-api-example parquet-stream-api/stream-reader-write
 add_executable(dhl-reader low-level-api/dhl-reader.cc low-level-api/sqlite3.c)
 add_executable(sqlite-reader low-level-api/sqlite-reader.cc low-level-api/sqlite3.c)
 add_executable(sqlite-to-parquet low-level-api/sqlite-to-parquet.cc low-level-api/sqlite3.c)
+add_executable(arrow-sqlite low-level-api/arrow-sqlite.cpp low-level-api/sqlite3.c)
 add_executable(sqlite-to-arrow low-level-api/sqlite-to-arrow.cc low-level-api/sqlite3.c)
 add_executable(tester low-level-api/arrow_tester.cc low-level-api/sqlite3.c)
 
@@ -49,6 +50,7 @@ target_link_libraries(parquet-stream-api-example ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(dhl-reader ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(sqlite-reader ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(sqlite-to-parquet ${PARQUET_EXAMPLE_LINK_LIBS})
+target_link_libraries(arrow-sqlite ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(sqlite-to-arrow ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(tester ${PARQUET_EXAMPLE_LINK_LIBS})
 

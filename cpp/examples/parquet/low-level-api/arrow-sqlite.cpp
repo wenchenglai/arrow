@@ -15,10 +15,6 @@
 #include <parquet/arrow/reader.h>
 #include <parquet/arrow/writer.h>
 
-//#include "arrow/util/decimal.h"
-//#include "arrow/testing/util.h"
-//#include "arrow/status.h"
-
 #include "sqlite3.h"
 
 typedef std::shared_ptr<arrow::Table> table_ptr;
@@ -97,9 +93,9 @@ void tokenize(string const &str, const char delim, string_vec &out)
     }
 }
 
-string_vec get_all_files_path_per_node(string dhl_name, string file_extension, int node_index) {
+string_vec get_all_files_path_per_node(string root_path, string dhl_name, string file_extension, int node_index) {
     // CONSTANTS declaration, could move else where for more flexibility
-    string DHL_ROOT_PATH = "/mnt/nodes/";
+    string DHL_ROOT_PATH = root_path;
 
     if (!opendir(DHL_ROOT_PATH.c_str())) {
         DHL_ROOT_PATH = "/Users/wen/github/arrow/data/test_dirs/";
@@ -175,11 +171,11 @@ string_vec get_all_files_path_per_node(string dhl_name, string file_extension, i
     return file_paths;
 }
 
-int get_all_files_path(string dhl_name, string file_extension, std::vector<string_vec> &file_paths_all_nodes) {
+int get_all_files_path(string root_path, string dhl_name, string file_extension, std::vector<string_vec> &file_paths_all_nodes) {
 
     std::vector<std::future<string_vec>> futures;
     for (int i = 0; i < NODES_COUNT; i++) {
-        std::future<string_vec> future = std::async(std::launch::async, get_all_files_path_per_node, dhl_name, file_extension, i);
+        std::future<string_vec> future = std::async(std::launch::async, get_all_files_path_per_node, root_path, dhl_name, file_extension, i);
         futures.push_back(std::move(future));
     }
 
@@ -799,10 +795,10 @@ int load_data_to_arrow_v3_one_table_per_thread(
 
 /* ################################################### */
 int load_data_to_parquet(string file_path,
-        string_map const &source_schema_map,
-        std::shared_ptr<parquet::schema::GroupNode> const &parq_schema,
-        parquet::RowGroupWriter* rg_writer,
-        std::vector<int64_t> &buffered_values_estimate) {
+                         string_map const &source_schema_map,
+                         std::shared_ptr<parquet::schema::GroupNode> const &parq_schema,
+                         parquet::RowGroupWriter* rg_writer,
+                         std::vector<int64_t> &buffered_values_estimate) {
 
     sqlite3* pDb;
     int flags = (SQLITE_OPEN_READONLY);
@@ -1080,7 +1076,7 @@ int process_each_data_batch(
         uint64_t binary_size_total = 0;
         for (auto file_path : file_paths) {
             sum_num_rows_per_thread += load_data_to_arrow_v3_one_table_per_thread(file_path, int64_builder_map, double_builder_map,
-                    float_builder_map, binary_builder_map, int32_builder_map, binary_count, binary_size_total, binary_zero_count);
+                                                                                  float_builder_map, binary_builder_map, int32_builder_map, binary_count, binary_size_total, binary_zero_count);
 
             table_count++;
 
@@ -1091,9 +1087,9 @@ int process_each_data_batch(
         }
 
         std::cout << "Finished builder appending, memory alloc:" << pool->bytes_allocated() << ", max: " << pool->max_memory()
-            << ", total rows:" << sum_num_rows_per_thread << ", table#: " << table_count
-            << ", binary count: " << binary_count << ", zero_count: " << binary_zero_count << ", size: " << binary_size_total
-            << std::endl;
+                  << ", total rows:" << sum_num_rows_per_thread << ", table#: " << table_count
+                  << ", binary count: " << binary_count << ", zero_count: " << binary_zero_count << ", size: " << binary_size_total
+                  << std::endl;
 
         std::cout << "Now we start merging " << table_count << " tables...." << std::endl;
 
@@ -1227,22 +1223,18 @@ int process_each_data_batch(
 
 int main(int argc, char** argv) {
     string dhl_name = "";
+    string root_path = "/mnt/nodes/";
     string file_extension = "patch";
     int thread_count_per_node = 1;
-    data_sink_type sink_target = Arrow;
-    bool has_encrypt = true;
-    int reserve_size = 0;
+    data_sink_type sink_target = ArrowTablePerThread;
+    bool has_encrypt = false;
+    int reserve_size = 0; // memory reservation size for Arrow Array
 
     // Print Help message
     if(argc == 2 && strcmp(argv[1], "-h") == 0) {
         std::cout << "Parameters List" << std::endl;
         std::cout << "1: name of DHL" << std::endl;
-        std::cout << "2: source file types" << std::endl;
-        std::cout << "3: thread counts, multiple of 6" << std::endl;
-        std::cout << "4: detination types, arrow creates one table per sqlite, arrow2 creates one arrow table per thread" << std::endl;
-        std::cout << "5: turn on/off parquet encryption" << std::endl;
-        std::cout << "6: builder reserve size" << std::endl;
-        std::cout << "sqlite-to-parquet test_dhl patch|patchAttr|patchAttr340M 6|12|24|48 arrow|cppType|parquet|arrow2 1|0 13000" << std::endl;
+        std::cout << "2: root path" << std::endl;
         return 0;
     }
 
@@ -1251,49 +1243,7 @@ int main(int argc, char** argv) {
     }
 
     if (argc > 2) {
-        file_extension = argv[2];
-    }
-
-    if (argc > 3) {
-        int input_thread_count = std::stoi(argv[3]);
-
-        // when input_thread_count == SINGLE_PARQUET_OUTPUT, it's a special case where we don't care about NODES_COUNT
-        // All other cases, we take into consideration of NODES_COUNT
-        // User's input is total threads of cluster, so we need to divide by NODES_COUNT
-        if (1 == input_thread_count ) {
-            thread_count_per_node = SINGLE_PARQUET_OUTPUT;
-        } else {
-            if (input_thread_count < NODES_COUNT) {
-                input_thread_count = NODES_COUNT;
-            }
-
-            thread_count_per_node = input_thread_count / NODES_COUNT;
-        }
-
-    }
-
-    if (argc > 4) {
-        string target = argv[4];
-
-        if ("cppType" == target) {
-            sink_target = CppType;
-        } else if ("parquet" == target) {
-            sink_target = Parquet;
-        } else if ("arrow2" == target) {
-            sink_target = ArrowTablePerThread;
-        }
-    }
-
-    if (argc > 5) {
-        string encrypt = argv[5];
-
-        if ("0" == encrypt) {
-            has_encrypt = false;
-        }
-    }
-
-    if (argc > 6) {
-        reserve_size = std::stoi(argv[6]);
+        root_path = argv[2];
     }
 
     if (dhl_name == "") {
@@ -1301,9 +1251,9 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    std::cout << "DHL: " << dhl_name << ", extension: " << file_extension
-        << ", thread count per node: " << thread_count_per_node << ", Sink type: " << sink_target
-        << ", reserve size: " << reserve_size << std::endl;
+    std::cout << "DHL: " << dhl_name << ", root path: " << root_path << ", extension: " << file_extension
+              << ", thread count per node: " << thread_count_per_node << ", Sink type: " << sink_target
+              << ", reserve size: " << reserve_size << std::endl;
 
     std::cout << "The first 200 characters of query string: " << CANONICAL_QUERY_STRING.substr(0, 200) << std::endl;
 
@@ -1311,7 +1261,7 @@ int main(int argc, char** argv) {
 
     // we will create one vector of patch files per node
     std::vector<string_vec> file_paths_all_nodes;
-    get_all_files_path(dhl_name, file_extension, file_paths_all_nodes);
+    get_all_files_path(root_path, dhl_name, file_extension, file_paths_all_nodes);
 
     auto stop1 = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = stop1 - start;
@@ -1358,7 +1308,7 @@ int main(int argc, char** argv) {
             //total_row_count += process_each_data_batch(files, source_schema_map, sink_target, thread_id++, has_encrypt, reserve_size);
 
             std::future<int> future = std::async(std::launch::async, process_each_data_batch, files,
-                    source_schema_map, sink_target, thread_id++, has_encrypt, reserve_size);
+                                                 source_schema_map, sink_target, thread_id++, has_encrypt, reserve_size);
             futures.push_back(std::move(future));
         }
     }
@@ -1378,4 +1328,5 @@ int main(int argc, char** argv) {
 
     return 0;
 }
+
 

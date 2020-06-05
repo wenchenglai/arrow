@@ -530,7 +530,7 @@ int main(int argc, char** argv) {
     if(argc == 2 && strcmp(argv[1], "-h") == 0) {
         std::cout << "Parameters List" << std::endl;
         std::cout << "1: folder path that contains one or more parquet files" << std::endl;
-        std::cout << "2: use parquet encryption to read" << std::endl;
+        std::cout << "2: use parquet encryption to read, 1 is yes, 0 is no encryption" << std::endl;
         std::cout << "dhl-reader parquet_folder 1|0" << std::endl;
         return 0;
     }
