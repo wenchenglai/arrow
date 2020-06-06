@@ -458,6 +458,62 @@ int arrow_to_sqlite(std::shared_ptr<arrow::Table> table, string output_file_path
     return EXIT_SUCCESS;
 }
 
+void table_inspection(table_ptr table) {
+    std::shared_ptr<arrow::Schema> schema = table->schema();
+    std::vector<std::shared_ptr<arrow::Field>> fields = schema->fields();
+
+    int num_columns = table->num_columns();
+    std::cout << "num of columns: " << num_columns << std::endl;
+
+
+    std::vector<std::shared_ptr<arrow::ChunkedArray>> columns = table->columns();
+
+    std::shared_ptr<arrow::ChunkedArray> column = columns[0];
+    std::cout << "column length: " << column->length() << std::endl;
+    std::cout << "column null count: " << column->null_count() << std::endl;
+    std::cout << "column num_chunks: " << column->num_chunks() << std::endl;
+
+    std::vector<std::shared_ptr<arrow::Array>> arr_vec = column->chunks();
+    std::cout << "arr_vec size: " << arr_vec.size() << std::endl;
+
+    std::shared_ptr<arrow::Array> array = arr_vec[0];
+    std::cout << "array 0 length: " << array->length() << std::endl;
+    std::cout << "array 0 offset: " << array->offset() << std::endl;
+
+    std::shared_ptr<arrow::Array> array1 = arr_vec[1];
+    std::cout << "array 1 length: " << array1->length() << std::endl;
+    std::cout << "array 1 offset: " << array1->offset() << std::endl;
+
+
+//    auto aaa = std::static_pointer_cast<arrow::Int32Array>(array);
+//    std::cout << "array->Value(0): " << aaa->Value(0) << std::endl;
+//    std::cout << "array->Value(14): " << aaa->Value(14) << std::endl;
+//    std::cout << "array->Value(15): " << aaa->Value(15) << std::endl;
+//    std::cout << "array->Value(16): " << aaa->Value(16) << std::endl;
+//    std::cout << "array->Value(17): " << aaa->Value(17) << std::endl;
+//    std::cout << "array->Value(18): " << aaa->Value(18) << std::endl;
+//
+//
+//    std::shared_ptr<arrow::Array> slice = aaa->Slice(15);
+//    std::cout << "slice length: " << slice->length() << std::endl;
+//    std::cout << "slice offset: " << slice->offset() << std::endl;
+//
+//    auto  slice_narray = std::static_pointer_cast<arrow::Int32Array>(slice);
+//    std::cout << "slice_narray->Value(0): " << slice_narray->Value(0) << std::endl;
+//    std::cout << "slice_narray->Value(1): " << slice_narray->Value(1) << std::endl;
+//    std::cout << "slice_narray->Value(2): " << slice_narray->Value(2) << std::endl;
+//    std::cout << "slice_narray->Value(3): " << slice_narray->Value(3) << std::endl;
+//
+//    std::cout << "array offset after slice: " << array->offset() << std::endl;
+//
+//    std::shared_ptr<arrow::Array> myView;
+//    ABORT_ON_FAILURE(aaa->View(field->type(), &myView));
+//    std::cout << "myView length: " << myView->length() << std::endl;
+//    std::cout << "myView toString: " << myView->ToString() << std::endl;
+
+    std::cout << std::endl;
+}
+
 // Load each parquet file inside this folder path
 // Each parquet file will spawn an independent thread
 int load_data_from_folder(std::string input_folder_path, bool has_encrypt) {
@@ -505,6 +561,8 @@ int load_data_from_folder(std::string input_folder_path, bool has_encrypt) {
 
         arrow::Result<std::shared_ptr<arrow::Table>> result = arrow::ConcatenateTables(tables);
         std::shared_ptr<arrow::Table> result_table = result.ValueOrDie();
+
+        table_inspection(result_table);
 
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> elapsed_seconds = end - start;
