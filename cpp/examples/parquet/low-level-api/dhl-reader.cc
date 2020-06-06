@@ -459,30 +459,44 @@ int arrow_to_sqlite(std::shared_ptr<arrow::Table> table, string output_file_path
 }
 
 void table_inspection(table_ptr table) {
-    std::shared_ptr<arrow::Schema> schema = table->schema();
-    std::vector<std::shared_ptr<arrow::Field>> fields = schema->fields();
 
     int num_columns = table->num_columns();
-    std::cout << "num of columns: " << num_columns << std::endl;
+    std::cout << "table num of columns: " << num_columns << std::endl;
+    std::cout << "table num of rows: " << table->num_rows() << std::endl;
+
+    std::shared_ptr<arrow::Schema> schema = table->schema();
+    std::vector<std::shared_ptr<arrow::Field>> fields = schema->fields();
+    std::cout << "schema num of fields: " << schema->num_fields() << std::endl;
+
+    std::shared_ptr<arrow::Field> field = fields[0];
+    std::cout << "field 0->name(): " << field->name() << std::endl;
+    std::cout << "field 0->type()->name(): " << field->type()->name() << std::endl;
+    std::cout << "field 0->nullable(): " << field->nullable() << std::endl;
+    std::cout << "field 0->metadata_fingerprint(): " << field->metadata_fingerprint() << std::endl;
+    std::cout << "field 0->HasMetadata(): " << field->HasMetadata() << std::endl;
+    std::cout << "field 0->metadata()->ToString(): " << field->metadata()->ToString() << std::endl;
 
 
     std::vector<std::shared_ptr<arrow::ChunkedArray>> columns = table->columns();
 
     std::shared_ptr<arrow::ChunkedArray> column = columns[0];
-    std::cout << "column length: " << column->length() << std::endl;
-    std::cout << "column null count: " << column->null_count() << std::endl;
-    std::cout << "column num_chunks: " << column->num_chunks() << std::endl;
+    std::cout << "column 0 type: " <<  column->type()->ToString() << std::endl;
+    std::cout << "column 0 length: " << column->length() << std::endl;
+    std::cout << "column 0 null count: " << column->null_count() << std::endl;
+    std::cout << "column 0 num_chunks: " << column->num_chunks() << std::endl;
 
     std::vector<std::shared_ptr<arrow::Array>> arr_vec = column->chunks();
-    std::cout << "arr_vec size: " << arr_vec.size() << std::endl;
+    std::cout << "column 0 chucks size: " << arr_vec.size() << std::endl;
 
     std::shared_ptr<arrow::Array> array = arr_vec[0];
     std::cout << "array 0 length: " << array->length() << std::endl;
     std::cout << "array 0 offset: " << array->offset() << std::endl;
 
-    std::shared_ptr<arrow::Array> array1 = arr_vec[1];
-    std::cout << "array 1 length: " << array1->length() << std::endl;
-    std::cout << "array 1 offset: " << array1->offset() << std::endl;
+    if (arr_vec.size() > 1) {
+        std::shared_ptr<arrow::Array> array1 = arr_vec[1];
+        std::cout << "array 1 length: " << array1->length() << std::endl;
+        std::cout << "array 1 offset: " << array1->offset() << std::endl;
+    }
 
 
 //    auto aaa = std::static_pointer_cast<arrow::Int32Array>(array);
