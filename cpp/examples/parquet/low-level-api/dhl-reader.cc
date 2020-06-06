@@ -229,48 +229,6 @@ int arrow_to_sqlite(std::shared_ptr<arrow::Table> table, string output_file_path
 //        }
 
         if (arrow::Type::INT32 == col_type) {
-
-//            std::shared_ptr<arrow::ChunkedArray> column = table->GetColumnByName(col_name);
-//            std::cout << "column length: " << column->length() << std::endl;
-//            std::cout << "column null count: " << column->null_count() << std::endl;
-//            std::cout << "column num_chunks: " << column->num_chunks() << std::endl;
-//
-//            std::vector<std::shared_ptr<arrow::Array>> arr_vec = column->chunks();
-//            std::cout << "arr_vec size: " << arr_vec.size() << std::endl;
-//
-//            std::shared_ptr<arrow::Array> array = arr_vec[0];
-//            std::cout << "array length: " << array->length() << std::endl;
-//            std::cout << "array offset: " << array->offset() << std::endl;
-//
-//
-//            auto aaa = std::static_pointer_cast<arrow::Int32Array>(array);
-//            std::cout << "array->Value(0): " << aaa->Value(0) << std::endl;
-//            std::cout << "array->Value(14): " << aaa->Value(14) << std::endl;
-//            std::cout << "array->Value(15): " << aaa->Value(15) << std::endl;
-//            std::cout << "array->Value(16): " << aaa->Value(16) << std::endl;
-//            std::cout << "array->Value(17): " << aaa->Value(17) << std::endl;
-//            std::cout << "array->Value(18): " << aaa->Value(18) << std::endl;
-//
-//
-//            std::shared_ptr<arrow::Array> slice = aaa->Slice(15);
-//            std::cout << "slice length: " << slice->length() << std::endl;
-//            std::cout << "slice offset: " << slice->offset() << std::endl;
-//
-//            auto  slice_narray = std::static_pointer_cast<arrow::Int32Array>(slice);
-//            std::cout << "slice_narray->Value(0): " << slice_narray->Value(0) << std::endl;
-//            std::cout << "slice_narray->Value(1): " << slice_narray->Value(1) << std::endl;
-//            std::cout << "slice_narray->Value(2): " << slice_narray->Value(2) << std::endl;
-//            std::cout << "slice_narray->Value(3): " << slice_narray->Value(3) << std::endl;
-//
-//            std::cout << "array offset after slice: " << array->offset() << std::endl;
-//
-//            std::shared_ptr<arrow::Array> myView;
-//            ABORT_ON_FAILURE(aaa->View(field->type(), &myView));
-//            std::cout << "myView length: " << myView->length() << std::endl;
-//            std::cout << "myView toString: " << myView->ToString() << std::endl;
-//
-//            std::cout << std::endl;
-
             int32_array_map[col_name] = std::static_pointer_cast<Int32Array>(table->GetColumnByName(col_name)->chunk(0));
             schema_string += col_name + " INTEGER,";
 
@@ -424,13 +382,14 @@ int arrow_to_sqlite(std::shared_ptr<arrow::Table> table, string output_file_path
                 sqlite3_bind_double(stmt, col_idx, array->Value(row_idx));
 
             } else if (arrow::Type::BINARY == col_type) {
-                //auto array = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
-                //sqlite3_bind_blob(stmt, col_idx, array->GetValue(row_idx, NULL), 1, NULL);
+                int length;
+                auto array = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
+                const uint8_t* local_buffer = array->GetValue(row_idx, &length);
+                sqlite3_bind_blob(stmt, col_idx, local_buffer, length, SQLITE_STATIC);
 
-                char* local_buffer = new char[1];
-                local_buffer[0] = 66;
-
-                sqlite3_bind_blob(stmt, col_idx, local_buffer, 1, NULL);
+                //char* local_buffer = new char[1];
+                //local_buffer[0] = 66;
+                //sqlite3_bind_blob(stmt, col_idx, local_buffer, 1, NULL);
 
             } else {
                 // There is a new data type from the table creator.  What should we do next?

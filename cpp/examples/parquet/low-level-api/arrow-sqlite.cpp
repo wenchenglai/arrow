@@ -650,7 +650,7 @@ int sqlite_to_arrow(string dhl_name, string input_path, table_ptr* table) {
     return 0;
 }
 
-int arrow_to_sqlite(std::shared_ptr<arrow::Table> table, string output_file_path) {
+int arrow_to_sqlite(table_ptr table, string output_file_path) {
     std::shared_ptr<arrow::Schema> schema = table->schema();
     std::vector<std::shared_ptr<arrow::Field>> fields = schema->fields();
 
@@ -876,7 +876,7 @@ int arrow_to_sqlite(std::shared_ptr<arrow::Table> table, string output_file_path
                 sqlite3_bind_double(stmt, col_idx, array->Value(row_idx));
 
             } else if (arrow::Type::BINARY == col_type) {
-                //auto array = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
+                auto array = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
                 //sqlite3_bind_blob(stmt, col_idx, array->GetValue(row_idx, NULL), 1, NULL);
 
                 char* local_buffer = new char[1];
@@ -908,6 +908,54 @@ int arrow_to_sqlite(std::shared_ptr<arrow::Table> table, string output_file_path
     sqlite3_close(pDb);
 
     return EXIT_SUCCESS;
+}
+
+// Automatically split the arrow table into smaller table and export to distinct sqlite files concurrently
+// if output_paths specified, num_partitions will be overwritten by the output_paths size
+int arrow_to_sqlite_split(table_ptr table, int num_partitions, std::vector<string> output_paths) {
+    if (output_paths.size() > 0) {
+        num_partitions = output_paths.size();
+    }
+
+    if (num_partitions > table->num_rows()) {
+        std::cout << "Please make sure your table size is equal or bigger than number of partitions." << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    int total_rows = table->num_rows();
+    int remainder = total_rows % num_partitions;
+    int num_rows_per_table = (total_rows + remainder) / num_partitions;
+
+    std::vector<table_ptr> split_tables;
+
+    for (int i = 0; i < num_partitions; i++) {
+
+        table_ptr slice = table->Slice(i * num_rows_per_table, num_rows_per_table);
+
+        split_tables.push_back(slice);
+    }
+
+    std::vector<std::future<int>> futures;
+
+    for (int i = 0; i < num_partitions; i++) {
+        std::future<int> future =
+                std::async(
+                        std::launch::async,
+                        arrow_to_sqlite,
+                        split_tables[i],
+                        output_paths[i]);
+        futures.push_back(std::move(future));
+    }
+
+    std::cout << "All saving-to-sqlite threads have been started...." << std::endl;
+
+    for (auto&& future : futures) {
+        future.get();
+    }
+
+    std::cout << "All threads finished their work.  The total number of files is " << num_partitions << std::endl;
+
+    return 0;
 }
 
 int main(int argc, char** argv) {
@@ -953,6 +1001,11 @@ int main(int argc, char** argv) {
     std::cout << "TESTER: Read operation is done, table size = " << table->num_rows() << std::endl;
 
     std::cout << "TESTER: Let's start saving arrow to sqlite..." << std::endl;
+
+    std::vector<string> output_paths;
+    output_paths.push_back("/arrow-sqlite-output/output.sqlite.patch");
+    output_paths.push_back("/arrow-sqlite-output/output.sqlite2.patch");
+    arrow_to_sqlite_split(table, 6, output_paths);
 
     arrow_to_sqlite(table, output_path);
 
