@@ -202,7 +202,7 @@ int arrow_to_sqlite(std::shared_ptr<arrow::Table> table, string output_file_path
     std::shared_ptr<arrow::Schema> schema = table->schema();
     std::vector<std::shared_ptr<arrow::Field>> fields = schema->fields();
 
-    std::cout << "Starting to create SQLite table with row count = " << table->num_rows() << std::endl;
+    std::cout << "Starting to create SQLite table at: " << output_file_path << std::endl;
 
     std::unordered_map<string, std::shared_ptr<Int32Array>> int32_array_map;
     std::unordered_map<string, std::shared_ptr<Int64Array>> int64_array_map;
@@ -530,7 +530,7 @@ void table_inspection(table_ptr table) {
 
 // Load each parquet file inside this folder path
 // Each parquet file will spawn an independent thread
-int load_data_from_folder(std::string input_folder_path, bool has_encrypt) {
+int load_data_from_folder(std::string input_folder_path, string output_path, bool has_encrypt) {
     DIR *dir;
     struct dirent *ent;
 
@@ -582,8 +582,13 @@ int load_data_from_folder(std::string input_folder_path, bool has_encrypt) {
         std::chrono::duration<double> elapsed_seconds = end - start;
         std::cout << "Combining all tables takes: " << elapsed_seconds.count() << ".  The merged table has " << result_table->num_rows() << " rows and " << result_table->num_columns() << " columns." << std::endl;
 
-        // write to sqlite db file
-        arrow_to_sqlite(result_table, "/Users/wen/github/arrow/cpp/parquet_debug/debug/wenlai.db");
+
+        //output_path = "/Users/wen/github/arrow/cpp/parquet_debug/debug/wenlai.db";
+
+        if ("no" != output_path) {
+            // write to sqlite db file
+            arrow_to_sqlite(result_table, output_path);
+        }
 
         //std::cout << "Loaded " << row_count << " total rows in " << column_count << " columns." << std::endl;
         return EXIT_SUCCESS;
@@ -596,6 +601,7 @@ int load_data_from_folder(std::string input_folder_path, bool has_encrypt) {
 
 int main(int argc, char** argv) {
     std::string input_folder_path = "";
+    string output_path = "no";  // by default, no sqlite output is needed
     bool has_encrypt = true;
 
     // Print Help message
@@ -603,7 +609,8 @@ int main(int argc, char** argv) {
         std::cout << "Parameters List" << std::endl;
         std::cout << "1: folder path that contains one or more parquet files" << std::endl;
         std::cout << "2: use parquet encryption to read, 1 is yes, 0 is no encryption" << std::endl;
-        std::cout << "dhl-reader parquet_folder 1|0" << std::endl;
+        std::cout << "3: path of output to sqlite, by default there is no output. Use 'no' to specify no out necessary" << std::endl;
+        std::cout << "dhl-reader parquet_folder 1|0 your-output-path" << std::endl;
         return 0;
     }
 
@@ -619,10 +626,14 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (argc > 3) {
+        output_path = argv[3];
+    }
+
     try {
         auto start = std::chrono::steady_clock::now();
 
-        load_data_from_folder(input_folder_path, has_encrypt);
+        load_data_from_folder(input_folder_path, output_path, has_encrypt);
 
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> elapsed_seconds = end - start;
