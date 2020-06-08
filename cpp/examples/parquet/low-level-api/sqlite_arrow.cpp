@@ -9,8 +9,6 @@
 #include <arrow/api.h>
 #include <arrow/io/file.h>
 
-#include "sqlite3.h"
-
 typedef std::shared_ptr<arrow::Table> table_ptr;
 typedef std::string string;
 typedef std::unordered_map<std::string, std::string> string_map;
@@ -547,6 +545,11 @@ int SqliteArrow::arrow_to_sqlite(table_ptr table, string output_file_path) {
 
     std::cout << "Starting to create SQLite table at: " << output_file_path << std::endl;
 
+    if (table->column(0)->num_chunks() > 1) {
+        std::cout << "More than one chunk found: " << table->column(0)->num_chunks() << std::endl;
+        std::cout << "Number of rows: " << table->num_rows() << std::endl;
+    }
+
     std::unordered_map<string, std::shared_ptr<Int32Array>> int32_array_map;
     std::unordered_map<string, std::shared_ptr<Int64Array>> int64_array_map;
     std::unordered_map<string, std::shared_ptr<FloatArray>> float_array_map;
@@ -785,6 +788,17 @@ int SqliteArrow::arrow_to_sqlite_split(table_ptr table, int num_partitions, std:
         split_tables.push_back(slice);
     }
 
+    std::cout << "Table with " << total_rows << "rows are split into " << num_partitions << " partitions." << std::endl;
+    std::cout << "This table column 0 has chunk size: " << table->column(0)->num_chunks() << std::endl;
+    std::cout << "This table column 1 has chunk size: " << table->column(1)->num_chunks() << std::endl;
+    std::cout << "This table column 2 has chunk size: " << table->column(2)->num_chunks() << std::endl;
+
+    for (table_ptr split_table : split_tables) {
+        std::cout << "Slice has num rows: " << split_table->num_rows() << ", num_col: " << split_table->num_columns() << std::endl;
+        std::cout << "This slice column 0 has chunk size: " << table->column(0)->num_chunks() << std::endl;
+        std::cout << "This slice column 1 has chunk size: " << table->column(1)->num_chunks() << std::endl;
+    }
+
     std::vector<std::future<int>> futures;
 
     for (int i = 0; i < num_partitions; i++) {
@@ -798,7 +812,7 @@ int SqliteArrow::arrow_to_sqlite_split(table_ptr table, int num_partitions, std:
         futures.push_back(std::move(future));
     }
 
-    std::cout << "All saving-to-sqlite threads have been started...." << std::endl;
+    std::cout << futures.size() << " saving-to-sqlite threads have been started...." << std::endl;
 
     for (auto&& future : futures) {
         future.get();

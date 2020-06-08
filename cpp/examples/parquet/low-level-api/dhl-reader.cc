@@ -308,12 +308,25 @@ int load_data_from_folder(std::string input_folder_path, string output_path, boo
         std::cout << "Combining all tables takes: " << elapsed_seconds.count() << ".  The merged table has " << result_table->num_rows() << " rows and " << result_table->num_columns() << " columns." << std::endl;
 
 
-        //output_path = "/Users/wen/github/arrow/cpp/parquet_debug/debug/wenlai.db";
+        output_path = "/Users/wen/github/arrow/cpp/parquet_debug/debug/";
 
         if ("no" != output_path) {
             // write to sqlite db file
             SqliteArrow* sqlite_arrow = new SqliteArrow();
-            sqlite_arrow->arrow_to_sqlite(result_table, output_path);
+            //sqlite_arrow->arrow_to_sqlite(result_table, output_path + "single.db");
+
+            std::vector<string> output_paths;
+            output_paths.push_back(output_path + "1.db");
+            output_paths.push_back(output_path + "2.db");
+            output_paths.push_back(output_path + "3.db");
+            output_paths.push_back(output_path + "4.db");
+            output_paths.push_back(output_path + "5.db");
+            output_paths.push_back(output_path + "6.db");
+            output_paths.push_back(output_path + "7.db");
+            output_paths.push_back(output_path + "8.db");
+            output_paths.push_back(output_path + "9.db");
+            output_paths.push_back(output_path + "10.db");
+            sqlite_arrow->arrow_to_sqlite_split(result_table, 10, output_paths);
         }
 
         //std::cout << "Loaded " << row_count << " total rows in " << column_count << " columns." << std::endl;
