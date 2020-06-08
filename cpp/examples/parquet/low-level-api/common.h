@@ -5,6 +5,8 @@
 #ifndef CPP_COMMON_H
 #define CPP_COMMON_H
 
+#include <arrow/api.h>
+
 typedef std::shared_ptr<arrow::Table> table_ptr;
 typedef std::string string;
 typedef std::unordered_map<std::string, std::string> string_map;

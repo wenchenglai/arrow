@@ -1,3 +1,5 @@
+#include "sqlite_arrow.h"
+
 #include <chrono>
 #include <dirent.h>
 #include <fstream>
@@ -34,18 +36,9 @@ using arrow::BinaryArray;
     }                                              \
   } while (0);
 
-string get_query_columns(string);
-
 enum data_sink_type {Arrow, CppType, Parquet, ArrowTablePerThread};
 
-const string QUERY_COLUMNS_FILE_NAME = "columns.txt";
 const int NODES_COUNT = 6;
-const string col_encryp_key_id = "key1";
-const string col_encryp_key = "9874567896123459";
-const string footer_encryp_key_id = "key2";
-const string footer_encryp_key = "9123856789712348";
-
-string CANONICAL_QUERY_STRING = get_query_columns(QUERY_COLUMNS_FILE_NAME);
 
 // split a big vector into n smaller vectors
 template<typename T>
@@ -176,112 +169,6 @@ int get_all_files_path(string input_path, string dhl_name, string file_extension
     return EXIT_SUCCESS;
 }
 
-// print SQLite Data Source Schema
-void print_dhl_sqlite_schema(string_map const &source_schema_map) {
-    std::cout << "******** Schema ******** = " << std::endl;
-    int i = 1;
-    for (auto itr = source_schema_map.begin(); itr != source_schema_map.end(); itr++) {
-        std::cout << i++ << ": " << itr->first << "  " << itr->second << std::endl;
-    }
-}
-
-// Read the columns that we need to use from a file on disk
-string get_query_columns(string file_name) {
-    std::ifstream in_file;
-
-    in_file.open(file_name);
-
-    if (!in_file) {
-        return "Select * FROM attribTable";
-    }
-
-    int size = 65535;
-    char columns[size];
-    in_file.getline(columns, size);
-
-    in_file.close();
-
-    return "SELECT " + string(columns) + " FROM attribTable";
-}
-
-// This function will get the SQLite data source schema.  We need to load this dynamically to create destination type,
-// which is typically an Arrow table.
-int get_schema(string file_path, string_map& source_schema_map) {
-    sqlite3* pDb;
-    int flags = (SQLITE_OPEN_READONLY);
-
-    int bResult = sqlite3_open_v2(file_path.c_str(), &pDb, flags, NULL);
-
-    if (SQLITE_OK != bResult) {
-        sqlite3_close(pDb);
-        std::cerr << "Cannot Open DB: " << bResult << std::endl;
-
-        if (nullptr != pDb) {
-            string strMsg = sqlite3_errmsg(pDb);
-            sqlite3_close_v2(pDb);
-            pDb = nullptr;
-        } else {
-            std::cerr << "Unable to get DB handle" << std::endl;
-        }
-        return EXIT_FAILURE;
-    }
-
-    //string strKey = "sAr5w3Vk5l";
-    string strKey = "e9FkChw3xF";
-    bResult = sqlite3_key_v2(pDb, nullptr, strKey.c_str(), static_cast<int>(strKey.size()));
-
-    if (SQLITE_OK != bResult) {
-        sqlite3_close(pDb);
-        std::cerr << "Cannot key the DB: " << bResult << std::endl;
-
-        if (nullptr != pDb) {
-            string strMsg = sqlite3_errmsg(pDb);
-            sqlite3_close_v2(pDb);
-            pDb = nullptr;
-            std::cerr << "SQLite Error Message: " << strMsg << std::endl;
-        } else {
-            std::cerr << "Unable to key the database" << std::endl;
-        }
-
-        return 0;
-    }
-
-    string query = CANONICAL_QUERY_STRING + " LIMIT 1;";
-
-    sqlite3_stmt *stmt;
-    bResult = sqlite3_prepare_v2(pDb, query.c_str(), -1, &stmt, NULL);
-
-    if (SQLITE_OK != bResult) {
-        sqlite3_finalize(stmt);
-        sqlite3_close(pDb);
-        std::cerr << "Cannot prepare statement from DB: " << bResult << std::endl;
-
-        if (nullptr != pDb) {
-            string strMsg = sqlite3_errmsg(pDb);
-            sqlite3_close_v2(pDb);
-            pDb = nullptr;
-            std::cerr << "SQLite Error Message: " << strMsg << std::endl;
-        } else {
-            std::cerr << "Unable to prepare SQLite statement" << std::endl;
-        }
-
-        return 0;
-    }
-
-    int col_count = sqlite3_column_count(stmt);
-    std::cout << "Total column count is " << col_count << std::endl;
-
-    // create source db schema map as "column name: data type"
-    // we need this to generalize data scanning to create arrow column builder
-    // Also, arrow table creation needs to build similar schema
-    for (int i = 0; i < col_count; i++) {
-        string col_name = sqlite3_column_name(stmt, i);
-        string col_type = sqlite3_column_decltype(stmt, i);
-        source_schema_map[col_name] = col_type;
-    }
-    return EXIT_SUCCESS;
-}
-
 /* ################################################### */
 int load_data_to_arrow_v3_one_table_per_thread(
         string file_path,
@@ -331,7 +218,8 @@ int load_data_to_arrow_v3_one_table_per_thread(
         return EXIT_FAILURE;
     }
 
-    string query = CANONICAL_QUERY_STRING + ";";
+    SqliteUtil* sqliteUtil = new SqliteUtil();
+    string query = sqliteUtil->get_query_columns(QUERY_COLUMNS_FILE_NAME) + ";";
 
     sqlite3_stmt *stmt;
     bResult = sqlite3_prepare_v2(pDb, query.c_str(), -1, &stmt, NULL);
@@ -561,7 +449,7 @@ table_ptr process_each_data_batch(
     return nullptr;
 }
 
-int sqlite_to_arrow(string dhl_name, string input_path, table_ptr* table) {
+int SqliteArrow::sqlite_to_arrow(string dhl_name, string input_path, table_ptr* table) {
     // default parameters
     string file_extension = "patch";
     int thread_count_per_node = 1;
@@ -573,7 +461,8 @@ int sqlite_to_arrow(string dhl_name, string input_path, table_ptr* table) {
               << ", thread count per node: " << thread_count_per_node << ", Sink type: " << sink_target
               << ", reserve size: " << reserve_size << std::endl;
 
-    std::cout << "The first 200 characters of query string: " << CANONICAL_QUERY_STRING.substr(0, 200) << std::endl;
+    SqliteUtil* sqliteUtil = new SqliteUtil();
+    std::cout << "The first 200 characters of query string: " << sqliteUtil->get_query_columns(QUERY_COLUMNS_FILE_NAME).substr(0, 200) << std::endl;
 
     auto start = std::chrono::steady_clock::now();
 
@@ -593,7 +482,9 @@ int sqlite_to_arrow(string dhl_name, string input_path, table_ptr* table) {
     // create data source db schema, as it's needed for arrow table creation
     // it's better to get schema here, because every thread need the same schema object
     string_map source_schema_map;
-    get_schema(file_paths_all_nodes.front().front(), source_schema_map);
+
+    SqliteUtil* sqliteUtil1 = new SqliteUtil();
+    sqliteUtil1->get_schema(file_paths_all_nodes.front().front(), source_schema_map);
     //print_schema(source_schema_map);
 
     std::vector<std::future<table_ptr>> futures;
@@ -650,11 +541,11 @@ int sqlite_to_arrow(string dhl_name, string input_path, table_ptr* table) {
     return 0;
 }
 
-int arrow_to_sqlite(table_ptr table, string output_file_path) {
+int SqliteArrow::arrow_to_sqlite(table_ptr table, string output_file_path) {
     std::shared_ptr<arrow::Schema> schema = table->schema();
     std::vector<std::shared_ptr<arrow::Field>> fields = schema->fields();
 
-    std::cout << "Starting to create SQLite table with row count = " << table->num_rows() << std::endl;
+    std::cout << "Starting to create SQLite table at: " << output_file_path << std::endl;
 
     std::unordered_map<string, std::shared_ptr<Int32Array>> int32_array_map;
     std::unordered_map<string, std::shared_ptr<Int64Array>> int64_array_map;
@@ -681,48 +572,6 @@ int arrow_to_sqlite(table_ptr table, string output_file_path) {
 //        }
 
         if (arrow::Type::INT32 == col_type) {
-
-//            std::shared_ptr<arrow::ChunkedArray> column = table->GetColumnByName(col_name);
-//            std::cout << "column length: " << column->length() << std::endl;
-//            std::cout << "column null count: " << column->null_count() << std::endl;
-//            std::cout << "column num_chunks: " << column->num_chunks() << std::endl;
-//
-//            std::vector<std::shared_ptr<arrow::Array>> arr_vec = column->chunks();
-//            std::cout << "arr_vec size: " << arr_vec.size() << std::endl;
-//
-//            std::shared_ptr<arrow::Array> array = arr_vec[0];
-//            std::cout << "array length: " << array->length() << std::endl;
-//            std::cout << "array offset: " << array->offset() << std::endl;
-//
-//
-//            auto aaa = std::static_pointer_cast<arrow::Int32Array>(array);
-//            std::cout << "array->Value(0): " << aaa->Value(0) << std::endl;
-//            std::cout << "array->Value(14): " << aaa->Value(14) << std::endl;
-//            std::cout << "array->Value(15): " << aaa->Value(15) << std::endl;
-//            std::cout << "array->Value(16): " << aaa->Value(16) << std::endl;
-//            std::cout << "array->Value(17): " << aaa->Value(17) << std::endl;
-//            std::cout << "array->Value(18): " << aaa->Value(18) << std::endl;
-//
-//
-//            std::shared_ptr<arrow::Array> slice = aaa->Slice(15);
-//            std::cout << "slice length: " << slice->length() << std::endl;
-//            std::cout << "slice offset: " << slice->offset() << std::endl;
-//
-//            auto  slice_narray = std::static_pointer_cast<arrow::Int32Array>(slice);
-//            std::cout << "slice_narray->Value(0): " << slice_narray->Value(0) << std::endl;
-//            std::cout << "slice_narray->Value(1): " << slice_narray->Value(1) << std::endl;
-//            std::cout << "slice_narray->Value(2): " << slice_narray->Value(2) << std::endl;
-//            std::cout << "slice_narray->Value(3): " << slice_narray->Value(3) << std::endl;
-//
-//            std::cout << "array offset after slice: " << array->offset() << std::endl;
-//
-//            std::shared_ptr<arrow::Array> myView;
-//            ABORT_ON_FAILURE(aaa->View(field->type(), &myView));
-//            std::cout << "myView length: " << myView->length() << std::endl;
-//            std::cout << "myView toString: " << myView->ToString() << std::endl;
-//
-//            std::cout << std::endl;
-
             int32_array_map[col_name] = std::static_pointer_cast<Int32Array>(table->GetColumnByName(col_name)->chunk(0));
             schema_string += col_name + " INTEGER,";
 
@@ -876,13 +725,14 @@ int arrow_to_sqlite(table_ptr table, string output_file_path) {
                 sqlite3_bind_double(stmt, col_idx, array->Value(row_idx));
 
             } else if (arrow::Type::BINARY == col_type) {
-                auto array = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
-                //sqlite3_bind_blob(stmt, col_idx, array->GetValue(row_idx, NULL), 1, NULL);
+//                int length;
+//                auto array = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
+//                const uint8_t* local_buffer = array->GetValue(row_idx, &length);
+//                sqlite3_bind_blob(stmt, col_idx, local_buffer, length, SQLITE_STATIC);
 
                 char* local_buffer = new char[1];
                 local_buffer[0] = 66;
-
-                sqlite3_bind_blob(stmt, col_idx, local_buffer, 1, NULL);
+                sqlite3_bind_blob(stmt, col_idx, local_buffer, 1, SQLITE_STATIC);
 
             } else {
                 // There is a new data type from the table creator.  What should we do next?
@@ -912,7 +762,7 @@ int arrow_to_sqlite(table_ptr table, string output_file_path) {
 
 // Automatically split the arrow table into smaller table and export to distinct sqlite files concurrently
 // if output_paths specified, num_partitions will be overwritten by the output_paths size
-int arrow_to_sqlite_split(table_ptr table, int num_partitions, std::vector<string> output_paths) {
+int SqliteArrow::arrow_to_sqlite_split(table_ptr table, int num_partitions, std::vector<string> output_paths) {
     if (output_paths.size() > 0) {
         num_partitions = output_paths.size();
     }
@@ -941,7 +791,8 @@ int arrow_to_sqlite_split(table_ptr table, int num_partitions, std::vector<strin
         std::future<int> future =
                 std::async(
                         std::launch::async,
-                        arrow_to_sqlite,
+                        &SqliteArrow::arrow_to_sqlite,
+                        this,
                         split_tables[i],
                         output_paths[i]);
         futures.push_back(std::move(future));
@@ -957,61 +808,4 @@ int arrow_to_sqlite_split(table_ptr table, int num_partitions, std::vector<strin
 
     return 0;
 }
-
-int main(int argc, char** argv) {
-    string dhl_name = "";
-    string input_path = "/mnt/nodes/";
-    string output_path = "/arrow-sqlite-output/output.sqlite.patch";
-
-    // Print Help message
-    if(argc == 2 && strcmp(argv[1], "-h") == 0) {
-        std::cout << "Parameters List" << std::endl;
-        std::cout << "1: name of DHL" << std::endl;
-        std::cout << "2: input path" << std::endl;
-        std::cout << "3: output path" << std::endl;
-        return 0;
-    }
-
-    if (argc > 1) {
-        dhl_name = argv[1];
-    }
-
-    if (argc > 2) {
-        input_path = argv[2];
-
-        if (input_path.back() != '/')
-            input_path += '/';
-    }
-
-    if (argc > 3) {
-        output_path = argv[3];
-
-        if (output_path.back() == '/')
-            output_path += "output.sqlite.patch";
-    }
-
-    if (dhl_name == "") {
-        std::cout << "Please specify a DHL name" << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    table_ptr table;
-    sqlite_to_arrow(dhl_name, input_path, &table);
-
-    std::cout << "TESTER: Read operation is done, table size = " << table->num_rows() << std::endl;
-
-    std::cout << "TESTER: Let's start saving arrow to sqlite..." << std::endl;
-
-    std::vector<string> output_paths;
-    output_paths.push_back("/arrow-sqlite-output/output.sqlite.patch");
-    output_paths.push_back("/arrow-sqlite-output/output.sqlite2.patch");
-    arrow_to_sqlite_split(table, 6, output_paths);
-
-    arrow_to_sqlite(table, output_path);
-
-    std::cout << "TESTER: Finished saving data to sqlite at" << output_path << std::endl;
-
-    return 0;
-}
-
 

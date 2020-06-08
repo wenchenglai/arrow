@@ -155,3 +155,13 @@ You need to clear all the disk cache, else your performance result will be skewe
 
 `on_spark_nodes clean_disk_cache`
 
+## debugging
+
+LLDB is the default debugger on Mac
+
+[LLDB vs GDB](https://lldb.llvm.org/use/map.html)
+
+`lldb -- a.out 1 2 3`
+
+`gdb --args a.out 1 2 3`
+

@@ -390,7 +390,10 @@ int main(int argc, char** argv) {
     // it's better to get schema here, because every thread need the same schema object
     string sqlite_file = "channel0.patch";
     string_map source_schema_map;
-    get_schema(sqlite_file, source_schema_map);
+
+    SqliteUtil* sqliteUtil = new SqliteUtil();
+
+    sqliteUtil->get_schema(sqlite_file, source_schema_map);
     //print_dhl_sqlite_schema(source_schema_map);
 
     auto start = std::chrono::steady_clock::now();

@@ -14,7 +14,7 @@
 #include <parquet/api/reader.h>
 
 #include "common.h"
-#include "sqlite3_util.h"
+#include "sqlite_arrow.h"
 
 #define ABORT_ON_FAILURE(expr)                     \
   do {                                             \
@@ -34,19 +34,6 @@ using arrow::DoubleArray;
 using arrow::BinaryArray;
 
 const std::string PARQUET = ".parquet";
-
-// break down a string using delimiter delim.
-void tokenize(string const &str, const char delim, string_vec &out)
-{
-    size_t start;
-    size_t end = 0;
-
-    while ((start = str.find_first_not_of(delim, end)) != string::npos)
-    {
-        end = str.find(delim, start);
-        out.push_back(str.substr(start, end - start));
-    }
-}
 
 string_vec get_query_columns_vec(std::string file_name) {
     std::ifstream in_file;
@@ -70,8 +57,6 @@ string_vec get_query_columns_vec(std::string file_name) {
 
     return columns;
 }
-
-
 
 void print_data(int64_t rows_read, int16_t definition_level, int16_t repetition_level, int64_t value, int64_t values_read, int i) {
     std::cout << "rows_read = " << rows_read << std::endl;
@@ -196,225 +181,6 @@ table_ptr read_parquet_file_into_arrow_table(string file_path, bool has_encrypt)
         std::cerr << "Parquet read error: " << e.what() << std::endl;
     }
     return nullptr;
-}
-
-int arrow_to_sqlite(std::shared_ptr<arrow::Table> table, string output_file_path) {
-    std::shared_ptr<arrow::Schema> schema = table->schema();
-    std::vector<std::shared_ptr<arrow::Field>> fields = schema->fields();
-
-    std::cout << "Starting to create SQLite table at: " << output_file_path << std::endl;
-
-    std::unordered_map<string, std::shared_ptr<Int32Array>> int32_array_map;
-    std::unordered_map<string, std::shared_ptr<Int64Array>> int64_array_map;
-    std::unordered_map<string, std::shared_ptr<FloatArray>> float_array_map;
-    std::unordered_map<string, std::shared_ptr<DoubleArray>> double_array_map;
-    std::unordered_map<string, std::shared_ptr<BinaryArray>> binary_array_map;
-
-    // holds the comma separated string of column names
-    string col_string = "";
-
-    // holds comma sperated string of (col_name sqlite_col_type) pair.  This is for SQLite table construction
-    string schema_string = "";
-
-    // comma separated question mark string to satisfy sqlite's prepared statement. e.g. ?,?,?,?
-    string question_marks = "";
-    for (auto&& field : fields) {
-        string col_name = field->name();
-        arrow::Type::type col_type = field->type()->id();
-
-        //std::cout << "col_name: " << col_name << ", type: " << col_type << std::endl;
-//
-//        if (type_name == arrow::Type::INT32){
-//            std::cout << "int 32 found" << std::endl;
-//        }
-
-        if (arrow::Type::INT32 == col_type) {
-            int32_array_map[col_name] = std::static_pointer_cast<Int32Array>(table->GetColumnByName(col_name)->chunk(0));
-            schema_string += col_name + " INTEGER,";
-
-        } else if (arrow::Type::INT64 == col_type) {
-            int64_array_map[col_name] = std::static_pointer_cast<Int64Array>(table->GetColumnByName(col_name)->chunk(0));
-            schema_string += col_name + " BIGINT,";
-
-        } else if (arrow::Type::FLOAT == col_type) {
-            float_array_map[col_name] = std::static_pointer_cast<FloatArray>(table->GetColumnByName(col_name)->chunk(0));
-            schema_string += col_name + " FLOAT,";
-
-        } else if (arrow::Type::DOUBLE == col_type) {
-            double_array_map[col_name] = std::static_pointer_cast<DoubleArray>(table->GetColumnByName(col_name)->chunk(0));
-            schema_string += col_name + " DOUBLE,";
-
-        } else if (arrow::Type::BINARY == col_type) {
-            binary_array_map[col_name] = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
-            schema_string += col_name + " BLOB,";
-
-        } else {
-            // There is a new data type from the table creator.  What should we do next?
-            continue;
-        }
-        col_string += col_name;
-        col_string += ",";
-        question_marks += "?,";
-    }
-
-    // remove the trailing comma
-    col_string.pop_back();
-    schema_string.pop_back();
-    question_marks.pop_back();
-
-    //std::cout << "col_string = " << col_string << std::endl;
-    //std::cout << "questions marks = " << question_marks << std::endl;
-
-    sqlite3* pDb;
-    int flags = (SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
-
-    int bResult = sqlite3_open_v2(output_file_path.c_str(), &pDb, flags, NULL);
-
-    if (SQLITE_OK != bResult) {
-        sqlite3_close(pDb);
-        std::cerr << "Cannot Open v2 DB: " << bResult << std::endl;
-
-        if (nullptr != pDb) {
-            string strMsg = sqlite3_errmsg(pDb);
-            std::cerr << "Error Message: " << strMsg << std::endl;
-            sqlite3_close_v2(pDb);
-            pDb = nullptr;
-        } else {
-            std::cerr << "Unable to get DB handle" << std::endl;
-        }
-        return EXIT_FAILURE;
-    }
-
-//    bResult = sqlite3_key_v2(pDb, nullptr, DHL_KEY.c_str(), static_cast<int>(DHL_KEY.size()));
-//
-//    if (SQLITE_OK != bResult) {
-//        sqlite3_close(pDb);
-//        std::cerr << "Cannot key the DB: " << bResult << std::endl;
-//
-//        if (nullptr != pDb) {
-//            string strMsg = sqlite3_errmsg(pDb);
-//            sqlite3_close_v2(pDb);
-//            pDb = nullptr;
-//            std::cerr << "SQLite Error Message: " << strMsg << std::endl;
-//        } else {
-//            std::cerr << "Unable to key the database" << std::endl;
-//        }
-//
-//        return EXIT_FAILURE;
-//    }
-
-    sqlite3_mutex_enter(sqlite3_db_mutex(pDb));
-    char* errorMessage;
-    sqlite3_exec(pDb, "PRAGMA synchronous=OFF", NULL, NULL, &errorMessage);
-    sqlite3_exec(pDb, "PRAGMA count_changes=OFF", NULL, NULL, &errorMessage);
-    sqlite3_exec(pDb, "PRAGMA journal_mode=MEMORY", NULL, NULL, &errorMessage);
-    sqlite3_exec(pDb, "PRAGMA temp_store=MEMORY", NULL, NULL, &errorMessage);
-
-    sqlite3_exec(pDb, "BEGIN TRANSACTION", NULL, NULL, &errorMessage);
-
-    string create_sql = "CREATE TABLE IF NOT EXISTS attribTable(" + schema_string + ");";
-
-    bResult = sqlite3_exec(pDb, create_sql.c_str(), NULL, 0, &errorMessage);
-
-    if (SQLITE_OK != bResult) {
-        sqlite3_close(pDb);
-        std::cerr << "Cannot execute Create table command: " << bResult << std::endl;
-
-        if (nullptr != pDb) {
-            string strMsg = sqlite3_errmsg(pDb);
-            std::cerr << "Error Message: " << strMsg << std::endl;
-            sqlite3_close_v2(pDb);
-            pDb = nullptr;
-        } else {
-            std::cerr << "Unable to get DB handle" << std::endl;
-        }
-    }
-
-    sqlite3_stmt *stmt;
-
-    string insert_sql = "INSERT INTO attribTable (" + col_string + ") VALUES (" + question_marks + ");";
-
-//    string upsert = "INSERT INTO attribTable (defectId, polarity, class)";
-//    upsert += "  VALUES('1234','1','abc')"
-//    upsert += "  ON CONFLICT(defectId) DO UPDATE SET"
-//    upsert += "    polarity=excluded.phonenumber,"
-//    upsert += "    class=excluded.validDate\n"
-//    upsert += "  WHERE excluded.validDate > phonebook2.validDate;";
-
-    bResult = sqlite3_prepare(pDb, insert_sql.c_str(), -1, &stmt, NULL);
-
-    if (bResult != SQLITE_OK) {
-        sqlite3_finalize(stmt);
-        std::cerr << "Cannot prepare statement from DB: " << bResult << std::endl;
-
-        if (nullptr != pDb) {
-            string strMsg = sqlite3_errmsg(pDb);
-            sqlite3_close_v2(pDb);
-            pDb = nullptr;
-            std::cerr << "SQLite Error Message: " << strMsg << std::endl;
-        } else {
-            std::cerr << "Unable to prepare SQLite statement" << std::endl;
-        }
-
-        return EXIT_FAILURE;
-    }
-
-    for (int64_t row_idx = 0; row_idx < table->num_rows(); row_idx++) {
-        int col_idx = 0;
-        for (auto&& field : fields) {
-            string col_name = field->name();
-            arrow::Type::type col_type = field->type()->id();
-
-            if (arrow::Type::INT32 == col_type) {
-                auto array = std::static_pointer_cast<Int32Array>(table->GetColumnByName(col_name)->chunk(0));
-                sqlite3_bind_int(stmt, col_idx, array->Value(row_idx));
-
-            } else if (arrow::Type::INT64 == col_type) {
-                auto array = std::static_pointer_cast<Int64Array>(table->GetColumnByName(col_name)->chunk(0));
-                sqlite3_bind_int64(stmt, col_idx, array->Value(row_idx));
-
-            } else if (arrow::Type::FLOAT == col_type) {
-                auto array = std::static_pointer_cast<FloatArray>(table->GetColumnByName(col_name)->chunk(0));
-                sqlite3_bind_double(stmt, col_idx, array->Value(row_idx));
-
-            } else if (arrow::Type::DOUBLE == col_type) {
-                auto array = std::static_pointer_cast<DoubleArray>(table->GetColumnByName(col_name)->chunk(0));
-                sqlite3_bind_double(stmt, col_idx, array->Value(row_idx));
-
-            } else if (arrow::Type::BINARY == col_type) {
-                int length;
-                auto array = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
-                const uint8_t* local_buffer = array->GetValue(row_idx, &length);
-                sqlite3_bind_blob(stmt, col_idx, local_buffer, length, SQLITE_STATIC);
-
-                //char* local_buffer = new char[1];
-                //local_buffer[0] = 66;
-                //sqlite3_bind_blob(stmt, col_idx, local_buffer, 1, NULL);
-
-            } else {
-                // There is a new data type from the table creator.  What should we do next?
-                continue;
-            }
-
-            col_idx++;
-        }
-
-        int retVal = sqlite3_step(stmt);
-        if (retVal != SQLITE_DONE)
-        {
-            printf("Commit Failed! %d\n", retVal);
-        }
-
-        sqlite3_reset(stmt);
-    }
-
-    sqlite3_exec(pDb, "COMMIT TRANSACTION", NULL, NULL, &errorMessage);
-    sqlite3_finalize(stmt);
-
-    sqlite3_mutex_leave(sqlite3_db_mutex(pDb));
-    sqlite3_close(pDb);
-
-    return EXIT_SUCCESS;
 }
 
 void table_inspection(table_ptr table) {
@@ -542,11 +308,12 @@ int load_data_from_folder(std::string input_folder_path, string output_path, boo
         std::cout << "Combining all tables takes: " << elapsed_seconds.count() << ".  The merged table has " << result_table->num_rows() << " rows and " << result_table->num_columns() << " columns." << std::endl;
 
 
-        //output_path = "/Users/wen/github/arrow/cpp/parquet_debug/debug/wenlai.db";
+        output_path = "/Users/wen/github/arrow/cpp/parquet_debug/debug/wenlai.db";
 
         if ("no" != output_path) {
             // write to sqlite db file
-            arrow_to_sqlite(result_table, output_path);
+            SqliteArrow* sqlite_arrow = new SqliteArrow();
+            sqlite_arrow->arrow_to_sqlite(result_table, output_path);
         }
 
         //std::cout << "Loaded " << row_count << " total rows in " << column_count << " columns." << std::endl;
