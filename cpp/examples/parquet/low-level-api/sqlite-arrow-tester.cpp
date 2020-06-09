@@ -47,14 +47,14 @@ int main(int argc, char** argv) {
 
     std::cout << "TESTER: Read operation is done, table size = " << table->num_rows() << std::endl;
 
-    std::cout << "TESTER: Let's start saving arrow to sqlite..." << std::endl;
-    io->arrow_to_sqlite(table, output_path);
+//    std::cout << "TESTER: Let's start saving arrow to sqlite..." << std::endl;
+//    io->arrow_to_sqlite(table, output_path);
 
-//    std::cout << "TESTER: Let's start saving arrow to multiple sqlite files..." << std::endl;
-//    std::vector<string> output_paths;
-//    output_paths.push_back("output.sqlite.patch");
-//    output_paths.push_back("output.sqlite2.patch");
-//    io->arrow_to_sqlite_split(table, 2, output_paths);
+    std::cout << "TESTER: Let's start saving arrow to multiple sqlite files..." << std::endl;
+    std::vector<string> output_paths;
+    output_paths.push_back("output.sqlite.patch");
+    output_paths.push_back("output.sqlite2.patch");
+    io->arrow_to_sqlite_split(table, 2, output_paths);
 
     std::cout << "TESTER: Finished saving data to sqlite at" << output_path << std::endl;
 

@@ -568,12 +568,6 @@ int SqliteArrow::arrow_to_sqlite(table_ptr table, string output_file_path) {
         string col_name = field->name();
         arrow::Type::type col_type = field->type()->id();
 
-        //std::cout << "col_name: " << col_name << ", type: " << col_type << std::endl;
-//
-//        if (type_name == arrow::Type::INT32){
-//            std::cout << "int 32 found" << std::endl;
-//        }
-
         if (arrow::Type::INT32 == col_type) {
             int32_array_map[col_name] = std::static_pointer_cast<Int32Array>(table->GetColumnByName(col_name)->chunk(0));
             schema_string += col_name + " INTEGER,";
@@ -713,29 +707,38 @@ int SqliteArrow::arrow_to_sqlite(table_ptr table, string output_file_path) {
 
             if (arrow::Type::INT32 == col_type) {
                 auto array = std::static_pointer_cast<Int32Array>(table->GetColumnByName(col_name)->chunk(0));
-                sqlite3_bind_int(stmt, col_idx, array->Value(row_idx));
+                if (array->length() > row_idx) {
+                    sqlite3_bind_int(stmt, col_idx, array->Value(row_idx));
+                }
 
             } else if (arrow::Type::INT64 == col_type) {
                 auto array = std::static_pointer_cast<Int64Array>(table->GetColumnByName(col_name)->chunk(0));
-                sqlite3_bind_int64(stmt, col_idx, array->Value(row_idx));
+                if (array->length() > row_idx) {
+                    sqlite3_bind_int64(stmt, col_idx, array->Value(row_idx));
+                }
 
             } else if (arrow::Type::FLOAT == col_type) {
                 auto array = std::static_pointer_cast<FloatArray>(table->GetColumnByName(col_name)->chunk(0));
-                sqlite3_bind_double(stmt, col_idx, array->Value(row_idx));
+                if (array->length() > row_idx) {
+                    sqlite3_bind_double(stmt, col_idx, array->Value(row_idx));
+                }
 
             } else if (arrow::Type::DOUBLE == col_type) {
                 auto array = std::static_pointer_cast<DoubleArray>(table->GetColumnByName(col_name)->chunk(0));
-                sqlite3_bind_double(stmt, col_idx, array->Value(row_idx));
+                if (array->length() > row_idx) {
+                    sqlite3_bind_double(stmt, col_idx, array->Value(row_idx));
+                }
 
             } else if (arrow::Type::BINARY == col_type) {
 //                int length;
-//                auto array = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
+                auto array = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
 //                const uint8_t* local_buffer = array->GetValue(row_idx, &length);
 //                sqlite3_bind_blob(stmt, col_idx, local_buffer, length, SQLITE_STATIC);
-
-                char* local_buffer = new char[1];
-                local_buffer[0] = 66;
-                sqlite3_bind_blob(stmt, col_idx, local_buffer, 1, SQLITE_STATIC);
+                if (array->length() > row_idx) {
+                    char *local_buffer = new char[1];
+                    local_buffer[0] = 66;
+                    sqlite3_bind_blob(stmt, col_idx, local_buffer, 1, SQLITE_STATIC);
+                }
 
             } else {
                 // There is a new data type from the table creator.  What should we do next?
