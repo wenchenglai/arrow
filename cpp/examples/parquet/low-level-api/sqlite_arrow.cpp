@@ -168,6 +168,8 @@ int get_all_files_path(string input_path, string dhl_name, string file_extension
 }
 
 /* ################################################### */
+// Generate one arrow table per thread, instead of one arrow table per sqlite table
+// A thread could have thousands of sqlite tables
 int load_data_to_arrow_v3_one_table_per_thread(
         string file_path,
         std::unordered_map<string, std::shared_ptr<Int64Builder>> &int64_builder_map,
@@ -274,6 +276,7 @@ int load_data_to_arrow_v3_one_table_per_thread(
                     local_buffer = new uint8_t[blob_size];
                     std::copy(blob_ptr, blob_ptr + blob_size, local_buffer);
                 } else {
+                    // We must populate
                     binary_zero_count++;
                     blob_size = 1;
                     local_buffer = new uint8_t[blob_size];
@@ -314,7 +317,6 @@ table_ptr process_each_data_batch(
     if (memory_target == ArrowTablePerThread) {
 
         arrow::MemoryPool* pool = arrow::default_memory_pool();
-        std::cout << "Memory Pool Type: " << pool->backend_name() << std::endl;
 
         std::unordered_map<string, std::shared_ptr<Int64Builder>> int64_builder_map;
         std::unordered_map<string, std::shared_ptr<DoubleBuilder>> double_builder_map;
@@ -384,10 +386,10 @@ table_ptr process_each_data_batch(
             table_count++;
         }
 
-        std::cout << "Finished builder appending, memory alloc:" << pool->bytes_allocated() << ", max: " << pool->max_memory()
-                  << ", total rows:" << sum_num_rows_per_thread << ", table#: " << table_count
-                  << ", binary count: " << binary_count << ", zero_count: " << binary_zero_count << ", size: " << binary_size_total
-                  << std::endl;
+//        std::cout << "Finished builder appending, memory alloc:" << pool->bytes_allocated() << ", max: " << pool->max_memory()
+//                  << ", total rows:" << sum_num_rows_per_thread << ", table#: " << table_count
+//                  << ", binary count: " << binary_count << ", zero_count: " << binary_zero_count << ", size: " << binary_size_total
+//                  << std::endl;
 
         std::cout << "Now we start merging " << table_count << " tables...." << std::endl;
 
@@ -456,8 +458,7 @@ int SqliteArrow::sqlite_to_arrow(string dhl_name, string input_path, table_ptr* 
     int reserve_size = 0; // memory reservation size for Arrow Array
 
     std::cout << "DHL: " << dhl_name << ", root path: " << input_path << ", extension: " << file_extension
-              << ", thread count per node: " << thread_count_per_node << ", Sink type: " << sink_target
-              << ", reserve size: " << reserve_size << std::endl;
+              << ", thread count per node: " << thread_count_per_node << std::endl;
 
     SqliteUtil* sqliteUtil = new SqliteUtil();
     std::cout << "The first 200 characters of query string: " << sqliteUtil->get_query_columns(QUERY_COLUMNS_FILE_NAME).substr(0, 200) << std::endl;
@@ -545,16 +546,23 @@ int SqliteArrow::arrow_to_sqlite(table_ptr table, string output_file_path) {
 
     std::cout << "Starting to create SQLite table at: " << output_file_path << std::endl;
 
+    std::vector<int64_t> array_size_vec;
     if (table->column(0)->num_chunks() > 1) {
         std::cout << "More than one chunk found: " << table->column(0)->num_chunks() << std::endl;
         std::cout << "Number of rows: " << table->num_rows() << std::endl;
+
+        std::shared_ptr<arrow::ChunkedArray> chunkedArray = table->column(0);
+        for (std::shared_ptr<arrow::Array> array :chunkedArray->chunks()) {
+            //std::cout << "Array Vector length: " << array->length() << std::endl;
+            array_size_vec.push_back(array->length());
+        }
     }
 
-    std::unordered_map<string, std::shared_ptr<Int32Array>> int32_array_map;
-    std::unordered_map<string, std::shared_ptr<Int64Array>> int64_array_map;
-    std::unordered_map<string, std::shared_ptr<FloatArray>> float_array_map;
-    std::unordered_map<string, std::shared_ptr<DoubleArray>> double_array_map;
-    std::unordered_map<string, std::shared_ptr<BinaryArray>> binary_array_map;
+//    std::unordered_map<string, std::shared_ptr<Int32Array>> int32_array_map;
+//    std::unordered_map<string, std::shared_ptr<Int64Array>> int64_array_map;
+//    std::unordered_map<string, std::shared_ptr<FloatArray>> float_array_map;
+//    std::unordered_map<string, std::shared_ptr<DoubleArray>> double_array_map;
+//    std::unordered_map<string, std::shared_ptr<BinaryArray>> binary_array_map;
 
     // holds the comma separated string of column names
     string col_string = "";
@@ -569,23 +577,23 @@ int SqliteArrow::arrow_to_sqlite(table_ptr table, string output_file_path) {
         arrow::Type::type col_type = field->type()->id();
 
         if (arrow::Type::INT32 == col_type) {
-            int32_array_map[col_name] = std::static_pointer_cast<Int32Array>(table->GetColumnByName(col_name)->chunk(0));
+            //int32_array_map[col_name] = std::static_pointer_cast<Int32Array>(table->GetColumnByName(col_name)->chunk(0));
             schema_string += col_name + " INTEGER,";
 
         } else if (arrow::Type::INT64 == col_type) {
-            int64_array_map[col_name] = std::static_pointer_cast<Int64Array>(table->GetColumnByName(col_name)->chunk(0));
+            //int64_array_map[col_name] = std::static_pointer_cast<Int64Array>(table->GetColumnByName(col_name)->chunk(0));
             schema_string += col_name + " BIGINT,";
 
         } else if (arrow::Type::FLOAT == col_type) {
-            float_array_map[col_name] = std::static_pointer_cast<FloatArray>(table->GetColumnByName(col_name)->chunk(0));
+            //float_array_map[col_name] = std::static_pointer_cast<FloatArray>(table->GetColumnByName(col_name)->chunk(0));
             schema_string += col_name + " FLOAT,";
 
         } else if (arrow::Type::DOUBLE == col_type) {
-            double_array_map[col_name] = std::static_pointer_cast<DoubleArray>(table->GetColumnByName(col_name)->chunk(0));
+            //double_array_map[col_name] = std::static_pointer_cast<DoubleArray>(table->GetColumnByName(col_name)->chunk(0));
             schema_string += col_name + " DOUBLE,";
 
         } else if (arrow::Type::BINARY == col_type) {
-            binary_array_map[col_name] = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
+            //binary_array_map[col_name] = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
             schema_string += col_name + " BLOB,";
 
         } else {
@@ -699,45 +707,70 @@ int SqliteArrow::arrow_to_sqlite(table_ptr table, string output_file_path) {
         return EXIT_FAILURE;
     }
 
+    int chunk_idx = 0;
+    int64_t array_idx = 0;
     for (int64_t row_idx = 0; row_idx < table->num_rows(); row_idx++) {
         int col_idx = 0;
         for (auto&& field : fields) {
             string col_name = field->name();
             arrow::Type::type col_type = field->type()->id();
 
+//            if (!array_size_vec.empty()) {
+//                // Since there are multiple chunks, we must calculate the true chunk_idx and array_idx
+//
+//                // make sure we always increment chunk_idx when our current array_idx
+//                // is bigger than current array size
+//                if (array_idx >= array_size_vec(chunk_idx)) {
+//                    chunk_idx += 1;
+//                    array_idx = 0;
+//                    // at this moment, we start over with new array.
+//                }
+//
+//                std::vector<int64_t>::iterator it = array_size_vec.begin();
+//                array_idx cumul_sum = std::accumulate(it, it + chunk_idx - 1, 0);
+//
+//                array_idx = row_idx - cumul_sum;
+//            }
+
+            array_idx = row_idx;
+
             if (arrow::Type::INT32 == col_type) {
-                auto array = std::static_pointer_cast<Int32Array>(table->GetColumnByName(col_name)->chunk(0));
-                if (array->length() > row_idx) {
-                    sqlite3_bind_int(stmt, col_idx, array->Value(row_idx));
+                auto array = std::static_pointer_cast<Int32Array>(table->GetColumnByName(col_name)->chunk(chunk_idx));
+                if (array->length() > array_idx) {
+                    sqlite3_bind_int(stmt, col_idx, array->Value(array_idx));
                 }
 
             } else if (arrow::Type::INT64 == col_type) {
-                auto array = std::static_pointer_cast<Int64Array>(table->GetColumnByName(col_name)->chunk(0));
-                if (array->length() > row_idx) {
-                    sqlite3_bind_int64(stmt, col_idx, array->Value(row_idx));
+                auto array = std::static_pointer_cast<Int64Array>(table->GetColumnByName(col_name)->chunk(chunk_idx));
+                if (array->length() > array_idx) {
+                    sqlite3_bind_int64(stmt, col_idx, array->Value(array_idx));
                 }
 
             } else if (arrow::Type::FLOAT == col_type) {
-                auto array = std::static_pointer_cast<FloatArray>(table->GetColumnByName(col_name)->chunk(0));
-                if (array->length() > row_idx) {
-                    sqlite3_bind_double(stmt, col_idx, array->Value(row_idx));
+                auto array = std::static_pointer_cast<FloatArray>(table->GetColumnByName(col_name)->chunk(chunk_idx));
+                if (array->length() > array_idx) {
+                    sqlite3_bind_double(stmt, col_idx, array->Value(array_idx));
                 }
 
             } else if (arrow::Type::DOUBLE == col_type) {
-                auto array = std::static_pointer_cast<DoubleArray>(table->GetColumnByName(col_name)->chunk(0));
-                if (array->length() > row_idx) {
-                    sqlite3_bind_double(stmt, col_idx, array->Value(row_idx));
+                auto array = std::static_pointer_cast<DoubleArray>(table->GetColumnByName(col_name)->chunk(chunk_idx));
+                if (array->length() > array_idx) {
+                    sqlite3_bind_double(stmt, col_idx, array->Value(array_idx));
                 }
 
             } else if (arrow::Type::BINARY == col_type) {
-//                int length;
-                auto array = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(0));
-//                const uint8_t* local_buffer = array->GetValue(row_idx, &length);
+                auto array = std::static_pointer_cast<BinaryArray>(table->GetColumnByName(col_name)->chunk(chunk_idx));
+                if (array->length() > array_idx) {
+                    int length;
+                    const uint8_t* local_buffer = NULL;
+                    local_buffer = array->GetValue(array_idx, &length);
 //                sqlite3_bind_blob(stmt, col_idx, local_buffer, length, SQLITE_STATIC);
-                if (array->length() > row_idx) {
-                    char *local_buffer = new char[1];
-                    local_buffer[0] = 66;
-                    sqlite3_bind_blob(stmt, col_idx, local_buffer, 1, SQLITE_STATIC);
+
+                    uint8_t *local_buffer2 = new uint8_t[length];
+                    local_buffer2[0] = 66;
+                    sqlite3_bind_blob(stmt, col_idx, local_buffer2, length, SQLITE_STATIC);
+                    delete[] local_buffer2;
+
                 }
 
             } else {
@@ -791,7 +824,7 @@ int SqliteArrow::arrow_to_sqlite_split(table_ptr table, int num_partitions, std:
         split_tables.push_back(slice);
     }
 
-    std::cout << "Table with " << total_rows << "rows are split into " << num_partitions << " partitions." << std::endl;
+    std::cout << "Table with " << total_rows << " rows are split into " << num_partitions << " partitions." << std::endl;
     std::cout << "This table column 0 has chunk size: " << table->column(0)->num_chunks() << std::endl;
     std::cout << "This table column 1 has chunk size: " << table->column(1)->num_chunks() << std::endl;
     std::cout << "This table column 2 has chunk size: " << table->column(2)->num_chunks() << std::endl;

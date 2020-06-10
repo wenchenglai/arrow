@@ -308,7 +308,7 @@ int load_data_from_folder(std::string input_folder_path, string output_path, boo
         std::cout << "Combining all tables takes: " << elapsed_seconds.count() << ".  The merged table has " << result_table->num_rows() << " rows and " << result_table->num_columns() << " columns." << std::endl;
 
 
-        //output_path = "/Users/wen/github/arrow/cpp/parquet_debug/debug/";
+        output_path = "/Users/wen/github/arrow/cpp/parquet_debug/debug/";
 
         if ("no" != output_path) {
             // write to sqlite db file

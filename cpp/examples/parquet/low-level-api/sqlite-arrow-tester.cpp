@@ -5,14 +5,16 @@
 int main(int argc, char** argv) {
     string dhl_name = "";
     string input_path = "/mnt/nodes/";
-    string output_path = "/arrow-sqlite-output/output.sqlite.patch";
+    string output_path = "";
+    int num_output = 1;
 
     // Print Help message
     if(argc == 2 && strcmp(argv[1], "-h") == 0) {
         std::cout << "Parameters List" << std::endl;
         std::cout << "1: name of DHL" << std::endl;
-        std::cout << "2: input path" << std::endl;
-        std::cout << "3: output path" << std::endl;
+        std::cout << "2: (optional) input path, default is /mnt/nodes/" << std::endl;
+        std::cout << "3: (optional) output path, default is current directory" << std::endl;
+        std::cout << "4: (optional) number of output files, default is 1" << std::endl;
         return 0;
     }
 
@@ -30,8 +32,12 @@ int main(int argc, char** argv) {
     if (argc > 3) {
         output_path = argv[3];
 
-        if (output_path.back() == '/')
-            output_path += "output.sqlite.patch";
+        if (output_path.back() != '/')
+            output_path += '/';
+    }
+
+    if (argc > 4) {
+        num_output = std::stoi(argv[4]);
     }
 
     if (dhl_name == "") {
@@ -47,16 +53,19 @@ int main(int argc, char** argv) {
 
     std::cout << "TESTER: Read operation is done, table size = " << table->num_rows() << std::endl;
 
-//    std::cout << "TESTER: Let's start saving arrow to sqlite..." << std::endl;
-//    io->arrow_to_sqlite(table, output_path);
+    //std::cout << "TESTER: Let's start saving arrow to sqlite..." << std::endl;
+    //io->arrow_to_sqlite(table, output_path + "1.db");
 
     std::cout << "TESTER: Let's start saving arrow to multiple sqlite files..." << std::endl;
     std::vector<string> output_paths;
-    output_paths.push_back("output.sqlite.patch");
-    output_paths.push_back("output.sqlite2.patch");
-    io->arrow_to_sqlite_split(table, 2, output_paths);
 
-    std::cout << "TESTER: Finished saving data to sqlite at" << output_path << std::endl;
+    for (int i = 0; i < num_output; i++) {
+        output_paths.push_back(output_path + std::to_string(i) +".db");
+    }
+
+    io->arrow_to_sqlite_split(table, num_output, output_paths);
+
+    std::cout << "TESTER: Finished saving data to sqlite at " << output_path << std::endl;
 
     return 0;
 }
