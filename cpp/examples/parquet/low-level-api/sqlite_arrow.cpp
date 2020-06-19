@@ -169,7 +169,7 @@ int get_all_files_path(string input_path, string dhl_name, string file_extension
 
 /* ################################################### */
 // Generate one arrow table per thread, instead of one arrow table per sqlite table
-// A thread could have thousands of sqlite tables
+// A thread could handle thousands of sqlite tables
 int load_data_to_arrow_v3_one_table_per_thread(
         string file_path,
         std::unordered_map<string, std::shared_ptr<Int64Builder>> &int64_builder_map,
@@ -177,7 +177,8 @@ int load_data_to_arrow_v3_one_table_per_thread(
         std::unordered_map<string, std::shared_ptr<FloatBuilder>> &float_builder_map,
         std::unordered_map<string, std::shared_ptr<BinaryBuilder>> &binary_builder_map,
         std::unordered_map<string, std::shared_ptr<Int32Builder>> &int32_builder_map,
-        uint64_t &binary_count, uint64_t &binary_size_total, uint64_t &binary_zero_count) {
+        uint64_t &binary_count, uint64_t &binary_size_total, uint64_t &binary_zero_count,
+        bool is_random) {
 
     sqlite3* pDb;
     int flags = (SQLITE_OPEN_READONLY);
@@ -219,7 +220,25 @@ int load_data_to_arrow_v3_one_table_per_thread(
     }
 
     SqliteUtil* sqliteUtil = new SqliteUtil();
-    string query = sqliteUtil->get_query_columns(QUERY_COLUMNS_FILE_NAME) + ";";
+    string query = sqliteUtil->get_query_columns(QUERY_COLUMNS_FILE_NAME);
+
+    if (is_random) {
+        query += " WHERE defectKey$defectID IN (";
+
+        srand(time(0));
+
+        int initial = rand() % 10;
+
+        string ids = "";  // construct "1,2,3,4,"
+        for (int i = 0; i < 1200; i++) {
+            ids += std::to_string(initial + i * 10) + ",";
+        }
+        ids.pop_back(); // "1,2,3,4"
+
+        query += ids + ");";
+    } else {
+        query += ";";
+    }
 
     sqlite3_stmt *stmt;
     bResult = sqlite3_prepare_v2(pDb, query.c_str(), -1, &stmt, NULL);
@@ -309,7 +328,8 @@ table_ptr process_each_data_batch(
         data_sink_type memory_target,
         int thread_id,
         bool has_encrypt,
-        int reserve_size) {
+        int reserve_size,
+        bool is_random) {
 
     // output variable that holds total rows for this data batch
     int sum_num_rows_per_thread = 0;
@@ -375,13 +395,13 @@ table_ptr process_each_data_batch(
                             file_path,
                             int64_builder_map,
                             double_builder_map,
-
                             float_builder_map,
                             binary_builder_map,
                             int32_builder_map,
                             binary_count,
                             binary_size_total,
-                            binary_zero_count);
+                            binary_zero_count,
+                            is_random);
 
             table_count++;
         }
@@ -449,7 +469,7 @@ table_ptr process_each_data_batch(
     return nullptr;
 }
 
-int SqliteArrow::sqlite_to_arrow(string dhl_name, string input_path, table_ptr* table) {
+int SqliteArrow::sqlite_to_arrow(string dhl_name, string input_path, bool is_random, table_ptr* table) {
     // default parameters
     string file_extension = "patch";
     int thread_count_per_node = 1;
@@ -505,7 +525,8 @@ int SqliteArrow::sqlite_to_arrow(string dhl_name, string input_path, table_ptr* 
                     sink_target,
                     thread_id++,
                     has_encrypt,
-                    reserve_size);
+                    reserve_size,
+                    is_random);
 
             futures.push_back(std::move(future));
         }
@@ -553,25 +574,22 @@ int SqliteArrow::arrow_to_sqlite(table_ptr table, string output_file_path) {
 
         std::shared_ptr<arrow::ChunkedArray> chunkedArray = table->column(0);
         for (std::shared_ptr<arrow::Array> array :chunkedArray->chunks()) {
-            //std::cout << "Array Vector length: " << array->length() << std::endl;
+            std::cout << "Array Vector length: " << array->length() << std::endl;
             array_size_vec.push_back(array->length());
         }
     }
 
-//    std::unordered_map<string, std::shared_ptr<Int32Array>> int32_array_map;
-//    std::unordered_map<string, std::shared_ptr<Int64Array>> int64_array_map;
-//    std::unordered_map<string, std::shared_ptr<FloatArray>> float_array_map;
-//    std::unordered_map<string, std::shared_ptr<DoubleArray>> double_array_map;
-//    std::unordered_map<string, std::shared_ptr<BinaryArray>> binary_array_map;
-
-    // holds the comma separated string of column names
+    // holds the comma separated string of column names. e.g. "col1, col2, col3"
     string col_string = "";
 
-    // holds comma sperated string of (col_name sqlite_col_type) pair.  This is for SQLite table construction
+    // holds comma separated string of (col_name sqlite_col_type) pair.  This is for SQLite table construction
     string schema_string = "";
 
     // comma separated question mark string to satisfy sqlite's prepared statement. e.g. ?,?,?,?
     string question_marks = "";
+
+    // upsert requires update pairs, e.g. col1 = ?, col2 = ?, col3 = ?
+    string upsert_pairs = "";
     for (auto&& field : fields) {
         string col_name = field->name();
         arrow::Type::type col_type = field->type()->id();
@@ -603,12 +621,14 @@ int SqliteArrow::arrow_to_sqlite(table_ptr table, string output_file_path) {
         col_string += col_name;
         col_string += ",";
         question_marks += "?,";
+        upsert_pairs += col_name + "=?,";
     }
 
     // remove the trailing comma
     col_string.pop_back();
     schema_string.pop_back();
     question_marks.pop_back();
+    upsert_pairs.pop_back();
 
     //std::cout << "col_string = " << col_string << std::endl;
     //std::cout << "questions marks = " << question_marks << std::endl;
@@ -682,6 +702,13 @@ int SqliteArrow::arrow_to_sqlite(table_ptr table, string output_file_path) {
 
     string insert_sql = "INSERT INTO attribTable (" + col_string + ") VALUES (" + question_marks + ");";
 
+    string upsert = "ON CONFLICT(defectKey$defectID) DO UPDATE SET ";
+    upsert += upsert_pairs;
+    upsert += ";";
+
+    //insert_sql += upsert;
+
+    //std::cout << "upsert = " + upsert << std::endl;
 //    string upsert = "INSERT INTO attribTable (defectId, polarity, class)";
 //    upsert += "  VALUES('1234','1','abc')"
 //    upsert += "  ON CONFLICT(defectId) DO UPDATE SET"
@@ -827,12 +854,11 @@ int SqliteArrow::arrow_to_sqlite_split(table_ptr table, int num_partitions, std:
     std::cout << "Table with " << total_rows << " rows are split into " << num_partitions << " partitions." << std::endl;
     std::cout << "This table column 0 has chunk size: " << table->column(0)->num_chunks() << std::endl;
     std::cout << "This table column 1 has chunk size: " << table->column(1)->num_chunks() << std::endl;
-    std::cout << "This table column 2 has chunk size: " << table->column(2)->num_chunks() << std::endl;
 
     for (table_ptr split_table : split_tables) {
         std::cout << "Slice has num rows: " << split_table->num_rows() << ", num_col: " << split_table->num_columns() << std::endl;
-        std::cout << "This slice column 0 has chunk size: " << table->column(0)->num_chunks() << std::endl;
-        std::cout << "This slice column 1 has chunk size: " << table->column(1)->num_chunks() << std::endl;
+        std::cout << "Slice column 0 has chunk size: " << table->column(0)->num_chunks() << std::endl;
+        std::cout << "Slice column 1 has chunk size: " << table->column(1)->num_chunks() << std::endl;
     }
 
     std::vector<std::future<int>> futures;

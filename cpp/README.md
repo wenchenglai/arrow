@@ -120,6 +120,10 @@ libparquet.so.100.0.0 is the root, real library.  Create two symbolic links as b
 `ln -s libparquet.so.100.0.0 libparquet.so.100`
 `ln -s libparquet.so.100 libparquet.so`
 
+Make the binary executable: 
+
+`chmod 777 binary_name`
+
 ## Test on ViXX
 
 Copy the binaries to vi3-0009 your-own-folder/release folder, I use my own folder as example:
@@ -164,4 +168,12 @@ LLDB is the default debugger on Mac
 `lldb -- a.out 1 2 3`
 
 `gdb --args a.out 1 2 3`
+
+## detail
+
+If build from source, the location of header file is
+/usr/local/include/arrow
+
+If install the binaries directly, the location of header is 
+/usr/include/arrow
 

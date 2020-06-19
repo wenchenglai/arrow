@@ -13,7 +13,7 @@ public:
     /// \param[std::shared_ptr<arrow::Table>*] out_table an Arrow table pointer that will point to the
     /// newly generated Arrow table
     /// \return status indicate EXIT_SUCCESS or EXIT_FAILURE
-    int sqlite_to_arrow(std::string dhl_name, std::string input_path, std::shared_ptr<arrow::Table>* out_table);
+    int sqlite_to_arrow(std::string dhl_name, std::string input_path, bool is_random, std::shared_ptr<arrow::Table>* out_table);
 
     /// \brief Convert Arrow Table in memory to SQLite data in disk
     /// \param[std::shared_ptr<arrow::Table>] table the length of the slice. If there are not enough

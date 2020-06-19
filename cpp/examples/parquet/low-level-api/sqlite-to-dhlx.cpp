@@ -1,15 +1,13 @@
 /*
- * A simple tester that test both ways:
- * SQLite to Arrow, then Arrow to SQLite.
  *
- * This tester demonstrates the usage of SqliteArrow class,
- * which provides utility functions to do the two-way IO operations.
+ * Read multiple DHL files randomly, and output to multiple dhlx files
  *
  * usage:
- * local test
- * ./sqlite-arrow-tester test_dhl /Users/wen/github/arrow/data/test_dirs output_folder 2
+ * local test:
+ * ./sqlite-to-dhlx test_dhl /Users/wen/github/arrow/data/test_dirs output_folder 2
  *
- */
+ * */
+
 #include <iostream>
 
 #include "sqlite_arrow.h"
@@ -61,7 +59,7 @@ int main(int argc, char** argv) {
 
     SqliteArrow* io = new SqliteArrow();
 
-    io->sqlite_to_arrow(dhl_name, input_path, false, &table);
+    io->sqlite_to_arrow(dhl_name, input_path, true, &table);
 
     std::cout << "TESTER: Read operation is done, table size = " << table->num_rows() << std::endl;
 
@@ -81,5 +79,4 @@ int main(int argc, char** argv) {
 
     return 0;
 }
-
 

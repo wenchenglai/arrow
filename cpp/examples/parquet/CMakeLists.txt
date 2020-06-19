@@ -25,6 +25,7 @@ add_executable(sqlite-to-parquet low-level-api/sqlite-to-parquet.cc low-level-ap
 add_executable(sqlite-arrow-tester low-level-api/sqlite-arrow-tester.cpp low-level-api/sqlite3.c low-level-api/sqlite_arrow.cpp low-level-api/sqlite3_util.cpp)
 add_executable(sqlite-to-arrow low-level-api/sqlite-to-arrow.cc low-level-api/sqlite3.c)
 add_executable(arrow-tester low-level-api/arrow_tester.cc low-level-api/sqlite3.c low-level-api/sqlite3_util.cpp)
+add_executable(sqlite-to-dhlx low-level-api/sqlite-to-dhlx.cpp low-level-api/sqlite3.c low-level-api/sqlite_arrow.cpp low-level-api/sqlite3_util.cpp)
 
 target_include_directories(parquet-low-level-example PRIVATE low-level-api/)
 target_include_directories(parquet-low-level-example2 PRIVATE low-level-api/)
@@ -53,6 +54,7 @@ target_link_libraries(sqlite-to-parquet ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(sqlite-arrow-tester ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(sqlite-to-arrow ${PARQUET_EXAMPLE_LINK_LIBS})
 target_link_libraries(arrow-tester ${PARQUET_EXAMPLE_LINK_LIBS})
+target_link_libraries(sqlite-to-dhlx ${PARQUET_EXAMPLE_LINK_LIBS})
 
 if(PARQUET_REQUIRE_ENCRYPTION)
   target_link_libraries(parquet-encryption-example ${PARQUET_EXAMPLE_LINK_LIBS})
