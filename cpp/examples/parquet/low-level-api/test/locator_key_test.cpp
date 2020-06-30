@@ -4,6 +4,7 @@
  */
 #include "../library/locator_key.h"
 
+#include <algorithm>
 #include <iostream>
 
 void TestGetLocatorKey() {
