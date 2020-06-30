@@ -25,18 +25,21 @@ int main(int argc, char** argv) {
     string dhl_name = "";
     string input_path = "/mnt/nodes/";
     string output_path = "output/";
-    int num_output = 1;
+    int num_output_files = 1;
     bool is_random = false;
     int num_reading_thread = 1;
+    int row_cout_per_file = 12000;
 
     // Print Help message
     if(argc == 2 && strcmp(argv[1], "-h") == 0) {
         std::cout << "Parameters List" << std::endl;
         std::cout << "1: name of DHL" << std::endl;
         std::cout << "2: (optional) input path (default is /mnt/nodes/)" << std::endl;
-        std::cout << "3: (optional) output path (default is ""output/"")" << std::endl;
-        std::cout << "4: (optional) is random selection? (default is 0)" << std::endl;
-        std::cout << "5: (optional) num of reading threads (default is 1)" << std::endl;
+        std::cout << "3: (optional) output path (default is output/)" << std::endl;
+        std::cout << "4: (optional) num of output files (default is 1)" << std::endl;
+        std::cout << "5: (optional) is random selection? (default is 0)" << std::endl;
+        std::cout << "6: (optional) num of reading threads (default is 1)" << std::endl;
+        std::cout << "7: (optional) size of row counts each file (default is 12000)" << std::endl;
 
         return 0;
     }
@@ -60,15 +63,23 @@ int main(int argc, char** argv) {
     }
 
     if (argc > 4) {
-        string random = argv[4];
+        num_output_files = std::stoi(argv[4]);
+    }
+
+    if (argc > 5) {
+        string random = argv[5];
 
         if ("1" == random) {
             is_random = true;
         }
     }
 
-    if (argc > 5) {
-        num_reading_thread = std::stoi(argv[5]);
+    if (argc > 6) {
+        num_reading_thread = std::stoi(argv[6]);
+    }
+
+    if (argc > 7) {
+        row_cout_per_file = std::stoi(argv[7]);
     }
 
     if (dhl_name == "") {
@@ -86,7 +97,7 @@ int main(int argc, char** argv) {
         float size_ratio = 0.1;
 
         locator_keys_for_random_selection = LocatorKey::GenerateRandomLocatorKeys(
-                dhl_name, input_path, size_ratio);
+                dhl_name, input_path, size_ratio, row_cout_per_file);
 
         std::cout << "We use random selection.  Number of keys generated: " << locator_keys_for_random_selection.size() << std::endl;
 
@@ -112,14 +123,14 @@ int main(int argc, char** argv) {
     std::chrono::duration<double> elapsed_seconds = stop1 - start_app_tp;
     std::cout << "SQLite read operation is done using " << elapsed_seconds.count() << " seconds, table size = " << table->num_rows() << std::endl;
 
-    std::cout << "Let's start saving arrow to " << num_output << " sqlite file(s) into " << output_path << " folder." << std::endl;
+    std::cout << "Let's start saving arrow to " << num_output_files << " sqlite file(s) into " << output_path << " folder." << std::endl;
     std::vector<string> output_paths;
 
-    for (int i = 0; i < num_output; i++) {
+    for (int i = 0; i < num_output_files; i++) {
         output_paths.push_back(output_path + std::to_string(i) +".db");
     }
 
-    io->arrow_to_sqlite_split(table, num_output, output_paths);
+    io->arrow_to_sqlite_split(table, num_output_files, output_paths);
 
     auto stop2 = std::chrono::steady_clock::now();
     elapsed_seconds = stop2 - stop1;

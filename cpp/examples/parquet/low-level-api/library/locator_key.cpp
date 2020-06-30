@@ -8,7 +8,6 @@ const int kDieRowOffset = 51;
 const int kSwath = 39;
 const int kSubSwath = 35;
 const int kChanNum = 32;
-const int kSQLiteDhlFileRowCount = 2;
 
 struct DhlLocatorKey {
     int die_row;
@@ -97,22 +96,30 @@ std::string LocatorKey::GetIncrementalIds(
 std::vector<uint64_t> LocatorKey::GenerateRandomLocatorKeys(
         std::string dhl_name,
         std::string root_path,
-        float size_ratio) {
+        float size_ratio,
+        int actual_row_cout_per_table) {
 
     std::vector<uint64_t> random_keys;
 
     std::vector<std::string> file_paths = DhlFileSystem::GetAllFilePaths(dhl_name, root_path, "patch", 0);
 
-    std::cout << "Number of sqlite files on storage001 to generate random keys from: " << file_paths.size() << std::endl;
     // randomly select an initial value between 0 to (shrink_factor - 1)
     srand(time(0));
     int shrink_factor = 1 / size_ratio;
     int initial = rand() % shrink_factor;
 
+    // we need to build arbitrary number of ids with a hard coded upper limit, because we cannot
+    // dig into each database file and find out the max count of rows.  We'll never generate more keys
+    // than specified by user.
+    int upper_limit = actual_row_cout_per_table / shrink_factor;
+
+    std::cout << "Generate random keys from: " << file_paths.size() << " files on this node.  Shrink factor: "
+    << shrink_factor << " , upper limit: " << upper_limit << std::endl;
+
     for (std::string file_path : file_paths) {
         DhlLocatorKey key = CreateLocatorKey(file_path);
 
-        for (int i = 0; i < kSQLiteDhlFileRowCount; i++) {
+        for (int i = 0; i < upper_limit; i++) {
             random_keys.push_back(
                     GetLocatorKeyNum(key.die_row, key.swath, 0, key.chan_num, initial + i * shrink_factor));
         }

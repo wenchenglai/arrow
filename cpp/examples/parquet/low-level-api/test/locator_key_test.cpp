@@ -91,7 +91,7 @@ void TestRandomLocatorKeyNumGenerator() {
     std::string dhl_name = "test_dhl";
     std::string root_path = "";
 
-    std::vector<uint64_t> random_keys = LocatorKey::GenerateRandomLocatorKeys(dhl_name, root_path, 0.1);
+    std::vector<uint64_t> random_keys = LocatorKey::GenerateRandomLocatorKeys(dhl_name, root_path, 0.1, 10);
 
     std::cout << "Number of keys generated: " << random_keys.size() << std::endl;
 

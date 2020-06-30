@@ -24,7 +24,8 @@ public:
     static std::vector<uint64_t> GenerateRandomLocatorKeys(
             std::string dhl_name,
             std::string root_path,
-            float size_ratio);
+            float size_ratio,
+            int actual_row_cout_per_table);
 };
 
 
