@@ -852,14 +852,14 @@ int SqliteArrow::arrow_to_sqlite_split(table_ptr table, int num_partitions, std:
     }
 
     std::cout << "Table with " << total_rows << " rows are split into " << num_partitions << " partitions." << std::endl;
-    std::cout << "This table column 0 has chunk size: " << table->column(0)->num_chunks() << std::endl;
-    std::cout << "This table column 1 has chunk size: " << table->column(1)->num_chunks() << std::endl;
+    //std::cout << "This table column 0 has chunk size: " << table->column(0)->num_chunks() << std::endl;
+    //std::cout << "This table column 1 has chunk size: " << table->column(1)->num_chunks() << std::endl;
 
-    for (table_ptr split_table : split_tables) {
-        std::cout << "Slice has num rows: " << split_table->num_rows() << ", num_col: " << split_table->num_columns() << std::endl;
-        std::cout << "Slice column 0 has chunk size: " << table->column(0)->num_chunks() << std::endl;
-        std::cout << "Slice column 1 has chunk size: " << table->column(1)->num_chunks() << std::endl;
-    }
+//    for (table_ptr split_table : split_tables) {
+//        std::cout << "Slice has num rows: " << split_table->num_rows() << ", num_col: " << split_table->num_columns() << std::endl;
+//        std::cout << "Slice column 0 has chunk size: " << table->column(0)->num_chunks() << std::endl;
+//        std::cout << "Slice column 1 has chunk size: " << table->column(1)->num_chunks() << std::endl;
+//    }
 
     std::vector<std::future<int>> futures;
 

@@ -1,3 +1,22 @@
+/*
+ * 2020/06/248
+ * Read multiple DHL files randomly, and update values to the same files that were loaded from
+ * This simulates the scenario where we need to upsert into a DHLx.
+ *
+ * The assumption is another process will provide a list of IDs
+ *
+ * This test simply load the data and write a few columns back using the IDs provided.
+ *
+ * We make one SQLite table as an Arrow RecordBatch, so the key challenge is to split
+ * a giant Arrow Table into thousands of RecordBatch(es).  The next key challenge is sort
+ * an Arrow Table with multiple columns
+ *
+ * usage:
+ * local test:
+ * ./sqlite-to-arrow test_dhl /Users/wen/github/arrow/data/test_dirs
+ *
+ * */
+
 #include <cassert>
 #include <chrono>
 #include <dirent.h>
