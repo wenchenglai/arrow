@@ -27,14 +27,16 @@ int main(int argc, char** argv) {
     string output_path = "output/";
     int num_output = 1;
     bool is_random = false;
+    int num_reading_thread = 1;
 
     // Print Help message
     if(argc == 2 && strcmp(argv[1], "-h") == 0) {
         std::cout << "Parameters List" << std::endl;
         std::cout << "1: name of DHL" << std::endl;
-        std::cout << "2: (optional) input path, default is /mnt/nodes/" << std::endl;
-        std::cout << "3: (optional) output path, default is ""output/""" << std::endl;
-        std::cout << "4: (optional) is random selection (1, default is 0)" << std::endl;
+        std::cout << "2: (optional) input path (default is /mnt/nodes/)" << std::endl;
+        std::cout << "3: (optional) output path (default is ""output/"")" << std::endl;
+        std::cout << "4: (optional) is random selection? (default is 0)" << std::endl;
+        std::cout << "5: (optional) num of reading threads (default is 1)" << std::endl;
 
         return 0;
     }
@@ -65,6 +67,10 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (argc > 5) {
+        num_reading_thread = std::stoi(argv[5]);
+    }
+
     if (dhl_name == "") {
         std::cout << "Please specify a DHL name" << std::endl;
         return EXIT_FAILURE;
@@ -72,50 +78,41 @@ int main(int argc, char** argv) {
 
     std::unique_ptr<SqliteArrow> io(new SqliteArrow());
 
-    std::shared_ptr<arrow::Table> table;
+    // official start of application timer
+    std::chrono::steady_clock::time_point start_app_tp = std::chrono::steady_clock::now();
+
+    std::vector<uint64_t> locator_keys_for_random_selection;
     if (is_random) {
         float size_ratio = 0.1;
 
-        std::vector<uint64_t> locator_keys_for_random_selection = LocatorKey::GenerateRandomLocatorKeys(
+        locator_keys_for_random_selection = LocatorKey::GenerateRandomLocatorKeys(
                 dhl_name, input_path, size_ratio);
 
-        //std::vector<uint64_t> locator_keys_for_random_selection;
-
-        std::cout << "Number of keys generated: " << locator_keys_for_random_selection.size() << std::endl;
+        std::cout << "We use random selection.  Number of keys generated: " << locator_keys_for_random_selection.size() << std::endl;
 
         std::cout << "Start sorting the keys....." << std::endl;
 
-        auto start = std::chrono::steady_clock::now();
+        auto start_sorting_tp = std::chrono::steady_clock::now();
 
         std::sort(locator_keys_for_random_selection.begin(), locator_keys_for_random_selection.end());
 
-        auto stop1 = std::chrono::steady_clock::now();
-        std::chrono::duration<double> elapsed_seconds = stop1 - start;
+        auto stop_sorting_tp = std::chrono::steady_clock::now();
+        std::chrono::duration<double> elapsed_seconds = stop_sorting_tp - start_sorting_tp;
         std::cout << "Sorting finished. The elapsed time: " << elapsed_seconds.count() << " seconds" << std::endl;
 
 //    for (uint64_t key : locator_keys_for_random_selection) {
 //        std::cout << key << std::endl << std::endl;
 //    }
-        table = io->SQLiteToArrow(dhl_name, input_path, locator_keys_for_random_selection);
-
-        auto stop2 = std::chrono::steady_clock::now();
-        elapsed_seconds = stop2 - stop1;
-        std::cout << "SQLite read operation is done using " << elapsed_seconds.count() << " seconds, table size = " << table->num_rows() << std::endl;
-
-    } else {
-        auto start = std::chrono::steady_clock::now();
-
-        std::vector<uint64_t> locator_keys_for_random_selection;
-        table = io->SQLiteToArrow(dhl_name, input_path, locator_keys_for_random_selection);
-
-        auto stop1 = std::chrono::steady_clock::now();
-        std::chrono::duration<double> elapsed_seconds = stop1 - start;
-        std::cout << "SQLite read operation is done using " << elapsed_seconds.count() << " seconds, table size = " << table->num_rows() << std::endl;
     }
 
-    auto start = std::chrono::steady_clock::now();
+    std::cout << "Size of random keys right before we read tables: " << locator_keys_for_random_selection.size() << std::endl;
+    std::shared_ptr<arrow::Table> table = io->SQLiteToArrow(dhl_name, input_path, num_reading_thread, locator_keys_for_random_selection);
 
-    std::cout << "Let's start saving arrow to multiple sqlite files..." << std::endl;
+    auto stop1 = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_seconds = stop1 - start_app_tp;
+    std::cout << "SQLite read operation is done using " << elapsed_seconds.count() << " seconds, table size = " << table->num_rows() << std::endl;
+
+    std::cout << "Let's start saving arrow to " << num_output << " sqlite file(s) into " << output_path << " folder." << std::endl;
     std::vector<string> output_paths;
 
     for (int i = 0; i < num_output; i++) {
@@ -124,12 +121,13 @@ int main(int argc, char** argv) {
 
     io->arrow_to_sqlite_split(table, num_output, output_paths);
 
-    auto stop3 = std::chrono::steady_clock::now();
-    std::chrono::duration<double> elapsed_seconds = stop3 - start;
-    std::cout << "Finished writing data in " << elapsed_seconds.count() << " seconds, saved to sqlite at " << output_path << std::endl;
+    auto stop2 = std::chrono::steady_clock::now();
+    elapsed_seconds = stop2 - stop1;
+    std::cout << "Finished writing data in " << elapsed_seconds.count() << " seconds." << std::endl;
 
-    //elapsed_seconds = stop3 - start;
-    //std::cout << "Total elapsed time (after random locator keys generation) is " << elapsed_seconds.count() << " seconds." << std::endl;
+    elapsed_seconds = stop2 - start_app_tp;
+    std::cout << "Total elapsed time is " << elapsed_seconds.count() << " seconds." << std::endl;
+
     return 0;
 }
 

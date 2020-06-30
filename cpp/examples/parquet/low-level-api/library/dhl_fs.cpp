@@ -46,7 +46,7 @@ std::vector<std::string> DhlFileSystem::GetAllFilePaths(
     // for windows Linux
     //dhl_path = "/home/wen/github/arrow/data/test_dirs/ROCOS/" + dhl_name;
 
-    std::cout << "Top Level Path = " << dhl_path << std::endl;
+    std::cout << "Scanning the data path: " << dhl_path << std::endl;
 
     DIR *dhl_dir = nullptr;
     if ((dhl_dir = opendir(dhl_path.c_str())) != NULL) {

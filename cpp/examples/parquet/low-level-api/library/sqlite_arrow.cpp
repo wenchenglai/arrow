@@ -463,16 +463,17 @@ table_ptr process_each_data_batch(
 std::shared_ptr<arrow::Table> SqliteArrow::SQLiteToArrow(
         string dhl_name,
         string input_path,
+        int num_reading_thread,
         std::vector<std::uint64_t> locator_keys_for_selection) {
+
     // default parameters
     string file_extension = "patch";
-    int thread_count_per_node = 1;
     data_sink_type sink_target = ArrowTablePerThread;
     bool has_encrypt = false;
     int reserve_size = 0; // memory reservation size for Arrow Array
 
     std::cout << "DHL: " << dhl_name << ", root path: " << input_path << ", extension: " << file_extension
-              << ", thread count per node: " << thread_count_per_node << std::endl;
+              << ", thread count per node: " << num_reading_thread << std::endl;
 
     SqliteUtil* sqliteUtil = new SqliteUtil();
     std::cout << "The first 200 characters of query string: " << sqliteUtil->get_query_columns(QUERY_COLUMNS_FILE_NAME).substr(0, 200) << std::endl;
@@ -485,9 +486,9 @@ std::shared_ptr<arrow::Table> SqliteArrow::SQLiteToArrow(
 
     auto stop1 = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = stop1 - start;
-    std::cout << "Patch file paths collection finished. The elapsed time: " << elapsed_seconds.count() << " seconds\n";
+    std::cout << "Patch file paths collection for " << NODES_COUNT << " node(s) finished. The elapsed time: " << elapsed_seconds.count() << " seconds\n";
 
-    std::cout << "File paths vector total count (controls node-level threading) = " << file_paths_all_nodes.size() << std::endl;
+    //std::cout << "File paths vector total count = " << file_paths_all_nodes.size() << std::endl;
     for (auto file_paths: file_paths_all_nodes) {
         std::cout << "Files count per node = " << file_paths.size() << std::endl;
     }
@@ -506,10 +507,14 @@ std::shared_ptr<arrow::Table> SqliteArrow::SQLiteToArrow(
     int thread_id = 1;
 
     for (auto file_paths : file_paths_all_nodes) {
+        // each file_paths has all the file paths for a single node
+        // The code below will split the file_paths into number of threads specified by user
         std::vector<std::vector<std::string>> file_paths_per_thread =
-                split_vector(file_paths, thread_count_per_node);
+                split_vector(file_paths, num_reading_thread);
 
-        std::cout << "This node will have thread count = " << file_paths_per_thread.size() << std::endl;
+        std::cout << "This node will have " << file_paths_per_thread.size()
+        << " partion(s), should match number of threads specified by the user, which is "
+        << num_reading_thread << std::endl;
 
         for (auto file_paths : file_paths_per_thread) {
             std::future<table_ptr> future = std::async(
@@ -527,7 +532,7 @@ std::shared_ptr<arrow::Table> SqliteArrow::SQLiteToArrow(
         }
     }
 
-    std::cout << "All threads have been started...." << std::endl;
+    std::cout << "All " << num_reading_thread << " reading thread(s) have been started...." << std::endl;
 
     std::vector<table_ptr> tables;
 
@@ -538,11 +543,11 @@ std::shared_ptr<arrow::Table> SqliteArrow::SQLiteToArrow(
 
     auto stop2 = std::chrono::steady_clock::now();
     elapsed_seconds = stop2 - stop1;
-    std::cout << "All threads finishing reading data, it takes: " << elapsed_seconds.count() << " seconds\n";
+    std::cout << "All " << num_reading_thread << " reading thread(s) finishing reading data, it takes: " << elapsed_seconds.count() << " seconds\n";
 
     arrow::Result<table_ptr> result = arrow::ConcatenateTables(tables);
     table_ptr result_table = result.ValueOrDie();
-    std::cout << "Final merging " << tables.size() << " tables into one arrow table, total row size = " << result_table->num_rows() << std::endl;
+    std::cout << "Final merging " << tables.size() << " table(s) into one arrow table, total row size = " << result_table->num_rows() << std::endl;
 
     auto end = std::chrono::steady_clock::now();
     elapsed_seconds = end - stop2;

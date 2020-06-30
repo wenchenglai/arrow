@@ -1269,7 +1269,6 @@ int main(int argc, char** argv) {
 
             thread_count_per_node = input_thread_count / NODES_COUNT;
         }
-
     }
 
     if (argc > 4) {

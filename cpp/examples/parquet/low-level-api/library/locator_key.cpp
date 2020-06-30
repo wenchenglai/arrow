@@ -103,7 +103,7 @@ std::vector<uint64_t> LocatorKey::GenerateRandomLocatorKeys(
 
     std::vector<std::string> file_paths = DhlFileSystem::GetAllFilePaths(dhl_name, root_path, "patch", 0);
 
-    std::cout << "Number of sqlite files to generate random keys from:" << file_paths.size() << std::endl;
+    std::cout << "Number of sqlite files on storage001 to generate random keys from: " << file_paths.size() << std::endl;
     // randomly select an initial value between 0 to (shrink_factor - 1)
     srand(time(0));
     int shrink_factor = 1 / size_ratio;

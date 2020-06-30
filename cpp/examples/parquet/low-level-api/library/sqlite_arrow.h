@@ -16,6 +16,7 @@ public:
     std::shared_ptr<arrow::Table> SQLiteToArrow(
             std::string dhl_name,
             std::string input_path,
+            int num_reading_thread,
             std::vector<std::uint64_t> selector_locator_ids);
 
     /// \brief Convert Arrow Table in memory to SQLite data in disk
